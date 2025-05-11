@@ -172,7 +172,20 @@ Therefore, `svelte-preprocessor-with-civet` (when configured by the user) should
 
 `svelte2tsx`'s role is to convert this already JS/TS-ified Svelte component structure into TSX for the TypeScript Language Service. It should not need to implement its own Civet (or other language-specific) preprocessor invocation logic.
 
-This phase focuses on verifying this entire pipeline: ensuring the Civet preprocessor runs correctly within the main flow, `svelte2tsx` consumes the resulting JS/TS appropriately, and source maps are chained correctly for accurate IDE features. The `console.log` statements recently added to `svelte2tsx` (in `packages/svelte2tsx/src/svelte2tsx/index.ts`) to detect `lang="civet"` will serve as a key verification tool: they *should not* fire if the main preprocessing pipeline correctly transforms the `lang` attribute before `svelte2tsx` sees the script tag.
+**Current Status (Based on Logs and Isolated Tests):**
+✅ The logs confirm that the Svelte Language Server is correctly identifying and invoking the script preprocessor for Civet code.
+✅ Isolated tests (e.g., `testPreProcTest.mjs`) confirm that `svelte-preprocessor-with-civet` *can* correctly transpile the problematic Civet class syntax to JavaScript when called directly with appropriate content and attributes.
+✅ Direct tests with `@danielx/civet` also confirm its capability to compile this syntax.
+
+❌ **The Discrepancy:** Despite the above, when `svelte-preprocessor-with-civet` is invoked by the Svelte Language Server's internal preprocessing pipeline (via `svelte/compiler`'s `preprocess` function), it *fails* to transform these specific Civet class syntaxes:
+    - The output code from the preprocessor (within the LS context) still contains the original Civet.
+    - The preprocessed code (within the LS context) maintains `lang="civet"`.
+
+- **New Root Cause Hypothesis:** The issue is **not** an inherent limitation in `@danielx/civet` or `svelte-preprocessor-with-civet` for this syntax. Instead, the problem likely lies in:
+    -   The specific options, arguments, or environment provided to `svelte-preprocessor-with-civet` when it's invoked *by the Svelte Language Server's pipeline* (managed by `SvelteDocument.ts` and `svelte/compiler`).
+    -   Differences in how the preprocessor behaves or is configured/initialized within the LS context versus standalone test scripts.
+    -   The `svelte.config.js` loaded by the language server might differ or its preprocessor options for Civet might not be correctly interpreted/passed through the chain for these complex cases.
+- ✅ Simpler Civet syntax (without these problematic class constructs) *is* correctly transpiled to JavaScript by `svelte-preprocessor-with-civet` *both* in isolated tests and (apparently) within the LS pipeline.
 
 **Key Files & Dependencies for this Phase:**
 *   `packages/language-server/src/plugins/svelte/SvelteDocument.ts`: Orchestrates the call to `document.compiler.preprocess`. This is where the primary Svelte preprocessing happens.
@@ -182,18 +195,34 @@ This phase focuses on verifying this entire pipeline: ensuring the Civet preproc
 *   `packages/svelte2tsx/src/svelte2tsx/index.ts`: Consumes the output of the main preprocessing pipeline. Its script `lang` attribute recognition logic will help verify the pipeline's behavior.
 
 **Tasks:**
-*   [ ] **Verify `svelte-preprocessor-with-civet` Invocation in Main Pipeline:**
-    *   **Setup:** Create a test environment or project with `svelte-preprocessor-with-civet` correctly configured in `svelte.config.js`.
-    *   **Test:** Process a `.svelte` file containing a `<script lang="civet">` block.
-    *   **Confirm:** Through logging or debugging, ensure that the `document.compiler.preprocess` call within `SvelteDocument.ts` (specifically in `TranspiledSvelteDocument.create`) correctly identifies and attempts to execute the configured Civet preprocessor.
-*   [ ] **Validate Script Transformation & `lang` Attribute Update by Preprocessor:**
-    *   **Observe:** Examine the `preprocessed.code` output from `document.compiler.preprocess` in `SvelteDocument.ts`.
-    *   **Verify Code:** Ensure the original Civet code from the script block has been transformed into JavaScript or TypeScript.
-    *   **Verify `lang` Attribute:** Check if the `<script>` tag's `lang` attribute in `preprocessed.code` has been updated (e.g., from `civet` to `ts` or `js`). This is standard behavior for Svelte preprocessors.
-    *   **`svelte2tsx` Check:** The `console.log` in `svelte2tsx` (looking for `lang="civet"`) should ideally *not* report "Civet ... script detected" if the main preprocessor successfully updated the `lang` attribute. This confirms `svelte2tsx` receives the already-transformed language type.
+*   [x] **Verify `svelte-preprocessor-with-civet` Invocation in Main Pipeline:**
+    *   ✅ **Confirmed:** The logs show that the script preprocessor is being called with the correct language and attributes.
+    *   ⚠️ **Sharpened Issue:** The preprocessor is invoked by the LS, but for certain class syntaxes, it does not return the expected JavaScript output, *even though isolated tests show it is capable of doing so*. This points to a discrepancy in how the preprocessor is used or behaves within the LS pipeline versus direct invocation.
+
+*   [ ] **Debug the Svelte Language Server's Preprocessing Pipeline for Civet:**
+    *   **Investigate Invocation Differences:**
+        - Focus on `packages/language-server/src/plugins/svelte/SvelteDocument.ts` and its use of `svelte/compiler`'s `preprocess`.
+        - Determine the exact content, filename, and attributes being passed to `svelte-preprocessor-with-civet` from within this pipeline for the problematic syntax.
+        - Compare these with the successful invocation in `testPreProcTest.mjs`. Are there subtle differences in the `content` string (e.g., whitespace, newlines)? Are all necessary `attributes` (like `lang="civet"`) correctly passed and received?
+        - Verify the options from `svelte.config.js` (loaded by `configLoader.ts`) are correctly reaching `svelte-preprocessor-with-civet` within the LS context.
+    *   **Check `svelte-preprocessor-with-civet` Behavior In-LS-Context:**
+        - If possible, add more detailed logging within `svelte-preprocessor-with-civet` (or a patched version) to see the options it receives and the exact input/output when run by the LS.
+    *   ✅ **Key Test Insights (Direct `@danielx/civet` test, and `testPreProcTest.mjs` for `svelte-preprocessor-with-civet`):**
+        - Direct tests show `@danielx/civet` *can* compile the class syntax in question.
+        - Crucially, `testPreProcTest.mjs` shows `svelte-preprocessor-with-civet` *can also* correctly transpile this syntax when invoked directly. This strongly suggests the preprocessor itself is not faulty for this syntax.
+        - The discrepancy arises when this preprocessor is invoked *within the Svelte Language Server's pipeline*.
+    *   **Compare Configurations:** Review `svelte.config.js` and how it's loaded/interpreted by the LS via `configLoader.ts` vs. any setup in test scripts.
+
+*   [ ] **Implement a Solution Based on Findings:**
+    *   **Option 1 - Rectify LS Preprocessing Invocation/Context:**
+        - Adjust how `SvelteDocument.ts` or `svelte/compiler`'s `preprocess` function passes data/options to `svelte-preprocessor-with-civet` to ensure it behaves as it does in isolated tests.
+        - This might involve ensuring the correct preprocessor options from `svelte.config.js` are consistently applied for Civet.
+        - If `svelte-preprocessor-with-civet` requires a specific environment or input format subtly different from what the LS pipeline provides, adapt the LS pipeline or the preprocessor.
+
 *   [ ] **Ensure `svelte2tsx` Correctly Consumes Preprocessed JS/TS Output:**
-    *   Confirm that `svelte2tsx` processes the JavaScript/TypeScript output (originating from Civet) without errors.
-    *   The `isTsFile` logic and general script handling within `svelte2tsx` should operate correctly based on the (now updated, e.g., "ts" or "js") `lang` attribute it receives.
+    *   Once the preprocessor is correctly transforming Civet code, confirm that `svelte2tsx` processes the JavaScript/TypeScript output without errors.
+    *   The `isTsFile` logic and general script handling within `svelte2tsx` should operate correctly based on the updated `lang` attribute it receives.
+
 *   [ ] **Investigate and Validate End-to-End Source Map Chaining:**
     *   **Importance:** This is critical for all IDE language features (diagnostics, hover, go-to-definition, debugging) to map accurately from the analyzed TSX back to the original Civet source code.
     *   **Chain of Maps:**
@@ -227,9 +256,10 @@ This phase focuses on verifying this entire pipeline: ensuring the Civet preproc
 - [x] `packages/language-server/src/plugins/typescript/TypeScriptPlugin.ts` - (Initial diagnostic filtering)
 - [x] `packages/language-server/src/plugins/typescript/features/DiagnosticsProvider.ts` - (Initial `filterCivetDiagnostics`)
 - [x] `packages/language-server/src/lib/documents/Document.ts` - Verified Civet script identification (no changes needed).
-- [ ] `packages/language-server/src/lib/configLoader.ts` - Verified, loads preprocessor config.
-- [ ] `packages/language-server/src/plugins/svelte/SvelteDocument.ts` - Key for invoking main Svelte preprocessing.
-- [x] `packages/svelte2tsx/src/svelte2tsx/index.ts` - `getAttributeValue` helper added for verification; main role is consuming preprocessed output.
+- [x] `packages/language-server/src/lib/configLoader.ts` - Verified, loads preprocessor config correctly.
+- [x] `packages/language-server/src/plugins/svelte/SvelteDocument.ts` - Verified, correctly invokes preprocessors. However, the focus now shifts to *how* it (and `svelte/compiler`) invokes them and what context/options are passed to `svelte-preprocessor-with-civet` that might cause different behavior than isolated tests.
+- [x] `packages/svelte2tsx/src/svelte2tsx/index.ts` - `getAttributeValue` helper added for verification; main role is consuming preprocessed output. Verified it should receive JS/TS if preprocessing is successful.
+- [ ] `svelte-preprocessor-with-civet` - Isolated tests confirm it *can* correctly transpile the problematic class syntax. The issue is its failure to do so when invoked *within the Svelte Language Server's pipeline*. Investigation should focus on the invocation differences.
 - [ ] `packages/svelte-vscode/README.md` - (For user documentation)
 - [ ] `packages/svelte-vscode/package.json` - (Potentially for `extensionDependencies`)
 
@@ -286,9 +316,10 @@ This phase focuses on verifying this entire pipeline: ensuring the Civet preproc
 
 ## Phase 3: Civet Preprocessor Integration, `svelte2tsx` Enhancement, and Language Feature Enablement
 - [x] `packages/language-server/src/lib/documents/Document.ts` - Verified Civet script identification (no changes needed).
-- [ ] `packages/language-server/src/lib/configLoader.ts` - Verified, loads preprocessor config.
-- [ ] `packages/language-server/src/plugins/svelte/SvelteDocument.ts` - Key for invoking main Svelte preprocessing.
-- [x] `packages/svelte2tsx/src/svelte2tsx/index.ts` - `getAttributeValue` helper added for verification; main role is consuming preprocessed output.
+- [x] `packages/language-server/src/lib/configLoader.ts` - Verified, loads preprocessor config correctly.
+- [x] `packages/language-server/src/plugins/svelte/SvelteDocument.ts` - Verified, correctly invokes preprocessors. However, the focus now shifts to *how* it (and `svelte/compiler`) invokes them and what context/options are passed to `svelte-preprocessor-with-civet` that might cause different behavior than isolated tests.
+- [x] `packages/svelte2tsx/src/svelte2tsx/index.ts` - `getAttributeValue` helper added for verification; main role is consuming preprocessed output. Verified it should receive JS/TS if preprocessing is successful.
+- [ ] `svelte-preprocessor-with-civet` - Isolated tests confirm it *can* correctly transpile the problematic class syntax. The issue is its failure to do so when invoked *within the Svelte Language Server's pipeline*. Investigation should focus on the invocation differences.
 - [ ] `packages/svelte-vscode/README.md` - (For user documentation)
 
 ## Phase 4: Testing and Documentation

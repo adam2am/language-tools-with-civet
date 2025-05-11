@@ -392,6 +392,18 @@ function wrapPreprocessors(preprocessors: PreprocessorGroup | PreprocessorGroup[
                 console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') called. File: ${args.filename}, Lang: ${args.attributes.lang}, Attrs: ${JSON.stringify(args.attributes)}`);
                 try {
                     const result = await preprocessor.script!(args);
+                    // Log the ENTIRE result object from the preprocessor for detailed inspection
+                    try {
+                        console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') RAW RESULT object:`, JSON.stringify(result, (key, value) => {
+                            if (typeof value === 'string' && value.length > 200) { // Truncate long strings in raw result
+                                return value.substring(0, 200) + '...';
+                            }
+                            return value;
+                        }, 2));
+                    } catch (e) {
+                        console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') RAW RESULT object could not be stringified:`, result);
+                    }
+
                     // Log the result, especially the new code and if lang attribute is present/changed in attributes
                     // Svelte preprocessors modify content and can return new attributes, though lang update is often implicit by Svelte itself.
                     console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') finished. Input lang: ${args.attributes.lang}. Output code sample (first 100 chars): ${result?.code?.substring(0, 100)}`);
