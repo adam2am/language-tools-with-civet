@@ -23,7 +23,7 @@ What's already been done:
 - Copy the real Civet TextMate grammar `civet.json` from `civet-syntax/syntaxes` into `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`
 - (Optionally) copy supporting files like `civet-configuration.json` or `codeblock.json` as needed
 - Remove the dummy Civet grammar `packages/svelte-vscode/test/grammar/dummy/civet.tmLanguage-dummy.json`
-- Ensure the grammar’s `scopeName` is `source.civet` and that it correctly tokenizes Civet constructs per the cheatsheet
+- Ensure the grammar's `scopeName` is `source.civet` and that it correctly tokenizes Civet constructs per the cheatsheet
 
 ### 1.2 Update Svelte Grammar to Properly Handle Civet
 - Ensure the Civet injection pattern is correctly configured
@@ -63,10 +63,10 @@ What's already been done:
 
 ## Phase 3: Preprocessor Integration
 
-### 3.1 Add Support for svelte-preprocessor-with-civet
-- Add support for detecting and using the Civet preprocessor
-- Detect when svelte-preprocessor-with-civet is used in a project
-- Ensure preprocessor output is correctly handled by the language server
+### 3.1 Verify Configured Preprocessors Are Supported
+- The language server's configLoader already loads any preprocessors defined in svelte.config.js
+- Verify that if a project uses `svelte-preprocessor-with-civet`, it is correctly executed during SvelteDocument transpilation
+- Only add custom integration if any CPS-specific hook is needed
 
 ### 3.2 Update Document Manager to Handle Civet
 - Ensure Document class can handle Civet script content
