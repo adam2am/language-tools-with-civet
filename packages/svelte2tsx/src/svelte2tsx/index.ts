@@ -12,6 +12,26 @@ import path from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
 
+// Helper function to extract attribute value from Svelte AST attribute array
+function getAttributeValue(attributes: any[], attributeName: string): string | undefined {
+    if (!attributes || !Array.isArray(attributes)) {
+        return undefined;
+    }
+    const attr = attributes.find(a => a.type === 'Attribute' && a.name === attributeName);
+    if (attr && Array.isArray(attr.value) && attr.value.length > 0) {
+        // Svelte AST attribute values are an array of nodes. For simple string values,
+        // it's usually a single Text node.
+        const valueNode = attr.value[0];
+        if (valueNode.type === 'Text') {
+            return valueNode.data || valueNode.raw; // 'data' is common, 'raw' as fallback
+        }
+    } else if (attr && attr.value === true && typeof attr.name === 'string') {
+        // Handle boolean attributes if necessary, though 'lang' typically isn't.
+        // For this specific use case, we're looking for a string value.
+    }
+    return undefined;
+}
+
 function processSvelteTemplate(
     str: MagicString,
     parse: typeof import('svelte/compiler').parse,
@@ -81,6 +101,13 @@ export function svelte2tsx(
     let moduleAst: ModuleAst | undefined;
 
     if (moduleScriptTag) {
+        const langAttr = getAttributeValue(moduleScriptTag.attributes, 'lang');
+        if (langAttr === 'civet') {
+            console.log('svelte2tsx: Civet module script detected via lang="' + langAttr + '"');
+            // TODO: Preprocess Civet content in moduleScriptTag.content
+            // For now, we're just recognizing it.
+        }
+
         moduleAst = createModuleAst(str, moduleScriptTag);
 
         if (moduleScriptTag.start != 0) {
@@ -105,6 +132,14 @@ export function svelte2tsx(
         if (scriptTag.start != instanceScriptTarget) {
             str.move(scriptTag.start, scriptTag.end, instanceScriptTarget);
         }
+
+        const langAttr = getAttributeValue(scriptTag.attributes, 'lang');
+        if (langAttr === 'civet') {
+            console.log('svelte2tsx: Civet instance script detected via lang="' + langAttr + '"');
+            // TODO: Preprocess Civet content in scriptTag.content
+            // For now, we're just recognizing it.
+        }
+
         const res = processInstanceScriptContent(
             str,
             scriptTag,
