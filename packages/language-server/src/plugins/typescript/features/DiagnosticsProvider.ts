@@ -51,6 +51,14 @@ export enum DiagnosticCode {
     DEPRECATED_SIGNATURE = 6387 // The signature '..' of '..' is deprecated
 }
 
+// Filter only module import diagnostics for Civet script blocks
+function filterCivetDiagnostics(diagnostics: ts.Diagnostic[]): ts.Diagnostic[] {
+    return diagnostics.filter(diag =>
+        diag.code === 2307 || // Cannot find module 'X'
+        diag.code === 2306    // File 'X' is not a module
+    );
+}
+
 export class DiagnosticsProviderImpl implements DiagnosticsProvider {
     constructor(
         private readonly lsAndTsDocResolver: LSAndTSDocResolver,
@@ -59,7 +67,8 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
 
     async getDiagnostics(
         document: Document,
-        cancellationToken?: CancellationToken
+        cancellationToken?: CancellationToken,
+        isCivet?: boolean
     ): Promise<Diagnostic[]> {
         const { lang, tsDoc } = await this.getLSAndTSDoc(document);
 
@@ -139,6 +148,11 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
             .filter((diagnostics) => !expectedTransitionThirdArgument(diagnostics, tsDoc, lang));
 
         diagnostics = resolveNoopsInReactiveStatements(lang, diagnostics);
+
+        // For Civet code, filter to only module import diagnostics
+        if (isCivet) {
+            diagnostics = filterCivetDiagnostics(diagnostics);
+        }
 
         const mapRange = rangeMapper(tsDoc, document, lang);
         const noFalsePositive = isNoFalsePositive(document, tsDoc);

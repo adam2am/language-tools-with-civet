@@ -224,12 +224,8 @@ export class TypeScriptPlugin
             return [];
         }
 
-        // Skip TS diagnostics for Civet script blocks
-        if (document.getLanguageAttribute('script') === 'civet') {
-            return [];
-        }
-
-        return this.diagnosticsProvider.getDiagnostics(document, cancellationToken);
+        const isCivet = document.getLanguageAttribute('script') === 'civet';
+        return this.diagnosticsProvider.getDiagnostics(document, cancellationToken, isCivet);
     }
 
     async doHover(document: Document, position: Position): Promise<Hover | null> {

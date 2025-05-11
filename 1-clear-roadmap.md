@@ -23,6 +23,7 @@ What's already been done:
 Current issues:
 - ✅ Syntax highlighting and parsing errors are correctly shown for Civet code
 - ❌ TypeScript type checking for dynamic imports and module resolution in Civet code is currently disabled (no "Cannot find module" errors)
+- ❌ Language-service features like hover, go-to-definition, and type inference for variables in Civet code currently do not work (variables hover as any, navigation fails)
 
 **Next Priority:** Enable TypeScript diagnostics for module imports in Civet code without reintroducing JS/TS syntax errors for Civet constructs
 
