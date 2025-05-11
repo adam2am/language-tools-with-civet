@@ -12,8 +12,10 @@ but it's only partially implemented.
 What's already been done:
 - TextMate grammar configuration has been updated to include Civet language support in script tags
 - Package configuration has been updated to include Civet in embeddedLanguages
-- A dummy Civet grammar file has been created for testing purposes
-- Real Civet grammar is available in `civet-syntax/syntaxes/civet.json` (with supporting files) ready for integration
+- ✅ Real Civet grammar has been copied into `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`
+- ✅ Dummy Civet grammar has been removed from `packages/svelte-vscode/test/grammar/dummy`
+- ✅ Civet injection patterns in `svelte.tmLanguage.src.yaml` have been verified as correct
+- Next: create Svelte test sample for Civet
 
 # Implementation Tree
 
@@ -114,10 +116,10 @@ What's already been done:
 # Files to be Modified
 
 ## Phase 1: TextMate Grammar Integration
-1. Copy `civet-syntax/syntaxes/civet.json` to `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`
-2. Remove `packages/svelte-vscode/test/grammar/dummy/civet.tmLanguage-dummy.json`
-3. `packages/svelte-vscode/syntaxes/svelte.tmLanguage.src.yaml` - Update Civet injection patterns (verify already correct)
-4. Create new file `packages/svelte-vscode/test/grammar/samples/script-civet/input.svelte` - Test sample
+- [x] Copy `civet-syntax/syntaxes/civet.json` to `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`
+- [x] Remove `packages/svelte-vscode/test/grammar/dummy/civet.tmLanguage-dummy.json`
+- [x] Verify Civet injection patterns in `packages/svelte-vscode/syntaxes/svelte.tmLanguage.src.yaml`
+- [x] Create `packages/svelte-vscode/test/grammar/samples/script-civet/input.svelte` test sample
 
 ## Phase 2: Language Server Integration
 5. `packages/language-server/src/ls-config.ts` - Add Civet configuration
