@@ -17,7 +17,13 @@ What's already been done:
 - ✅ Civet injection patterns in `svelte.tmLanguage.src.yaml` have been verified as correct
 - ✅ Created `packages/svelte-vscode/test/grammar/samples/script-civet/input.svelte` test sample
 - ✅ Grammar build and tests passed in `packages/svelte-vscode`
-- Next: Start Phase 2 - Language Server Integration
+- ✅ Basic Language Server integration has been implemented
+- ✅ Syntax highlighting for Civet in Svelte files is working correctly
+
+Current issues:
+- ❌ Despite correct syntax highlighting, the language server is still treating Civet code as JavaScript for error checking
+- ❌ JavaScript errors are shown for valid Civet syntax (e.g., `:=` operator shows "Expression expected" error)
+- Next: Fix language server diagnostics for Civet code
 
 # Implementation Tree
 
@@ -65,23 +71,28 @@ What's already been done:
 - [x] Document why no parser dependency is required: Civet parsing is handled by the external VSCode Civet extension and `svelte-preprocessor-with-civet`; the language server operates on TSX output
 - [ ] If needed, add Civet as a dependency in `packages/language-server/package.json`
 
-## Phase 3: Extension Integration and Preprocessor Support
+## Phase 3: Language Server Diagnostics and Preprocessor Support
 
-### 3.1 Add Extension Dependency or Integration
+### 3.1 Fix Language Server Diagnostics for Civet
+- [ ] Update the Civet plugin to suppress JavaScript diagnostics for Civet code
+- [ ] Modify the TypeScript plugin to ignore Civet script blocks
+- [ ] Implement a mechanism to prevent JS/TS validation on Civet code
+
+### 3.2 Add Extension Dependency or Integration
 - [x] Decide not to depend on the VSCode Civet extension directly
 - [ ] Document how users should install and configure the Civet extension alongside the Svelte extension
 
-### 3.2 Verify Preprocessor Support
+### 3.3 Verify Preprocessor Support
 - [ ] Confirm the language server's configLoader already loads preprocessors from svelte.config.js
 - [ ] Test with a project using `svelte-preprocessor-with-civet` to verify it works
 - [ ] Document any specific configuration needed for the preprocessor
 
-### 3.3 Update Document Manager to Handle Civet
+### 3.4 Update Document Manager to Handle Civet
 - [ ] Ensure Document class can handle Civet script content
 - [ ] Verify script tag detection recognizes Civet
 - [ ] Handle Civet script content appropriately
 
-### 3.4 Update svelte2tsx to Handle Civet
+### 3.5 Update svelte2tsx to Handle Civet
 - [ ] Add support for converting Civet script content to TSX
 - [ ] Detect Civet script tags
 - [ ] Use the appropriate method to convert Civet to JavaScript/TypeScript
@@ -137,10 +148,13 @@ What's already been done:
 - [x] `packages/language-server/src/server.ts` - Register Civet plugin
 - [ ] Document decision about Civet dependencies
 
-## Phase 3: Extension Integration and Preprocessor Support
+## Phase 3: Language Server Diagnostics and Preprocessor Support
+- [ ] `packages/language-server/src/plugins/civet/CivetPlugin.ts` - Update to suppress JS diagnostics for Civet code
+- [ ] `packages/language-server/src/plugins/typescript/TypeScriptPlugin.ts` - Modify to ignore Civet script blocks
 - [ ] `packages/svelte-vscode/package.json` - Add extension dependency if needed
 - [ ] `packages/language-server/src/plugins/svelte/SveltePlugin.ts` - Verify preprocessor support
 - [ ] `packages/language-server/src/lib/documents/Document.ts` - Verify Civet script handling
+- [ ] `packages/svelte2tsx/src/index.ts` - Add support for converting Civet to TSX
 
 ## Phase 4: Testing and Documentation
 - [ ] `packages/svelte-vscode/package.json` - Verify configuration
