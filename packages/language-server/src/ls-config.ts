@@ -16,8 +16,8 @@ const defaultLSConfig: LSConfig = {
         enable: true,
         diagnostics: { enable: true },
         hover: { enable: true },
-        completions: { enable: true },
         documentSymbols: { enable: true },
+        completions: { enable: true },
         codeActions: { enable: true },
         selectionRange: { enable: true },
         signatureHelp: { enable: true },
@@ -65,6 +65,15 @@ const defaultLSConfig: LSConfig = {
         selectionRange: { enable: true },
         runesLegacyModeCodeLens: { enable: true },
         defaultScriptLanguage: 'none'
+    },
+    civet: {
+        enable: true,
+        diagnostics: { enable: true },
+        hover: { enable: true },
+        completions: { enable: true },
+        documentSymbols: { enable: true },
+        codeActions: { enable: true },
+        selectionRange: { enable: true }
     }
 };
 
@@ -77,6 +86,7 @@ export interface LSConfig {
     css: LSCSSConfig;
     html: LSHTMLConfig;
     svelte: LSSvelteConfig;
+    civet: LSCivetConfig;
 }
 
 export interface LSTypescriptConfig {
@@ -714,4 +724,15 @@ export class LSConfigManager {
     getClientCapabilities() {
         return this.clientCapabilities;
     }
+}
+
+// Civet language server configuration
+export interface LSCivetConfig {
+    enable: boolean;
+    diagnostics: { enable: boolean };
+    hover: { enable: boolean };
+    completions: { enable: boolean };
+    documentSymbols: { enable: boolean };
+    codeActions: { enable: boolean };
+    selectionRange: { enable: boolean };
 }

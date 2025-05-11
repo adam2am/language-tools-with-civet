@@ -51,6 +51,7 @@ import {
 } from './plugins/typescript/features/CodeActionsProvider';
 import { createLanguageServices } from './plugins/css/service';
 import { FileSystemProvider } from './plugins/css/FileSystemProvider';
+import { CivetPlugin } from './plugins/civet';
 
 namespace TagCloseRequest {
     export const type: RequestType<TextDocumentPositionParams, string | null, any> =
@@ -185,6 +186,7 @@ export function startServer(options?: LSOptions) {
         });
         // Order of plugin registration matters for FirstNonNull, which affects for example hover info
         pluginHost.register((sveltePlugin = new SveltePlugin(configManager)));
+        pluginHost.register(new CivetPlugin(configManager));
         pluginHost.register(new HTMLPlugin(docManager, configManager));
 
         const cssLanguageServices = createLanguageServices({

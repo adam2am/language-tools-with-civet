@@ -46,19 +46,19 @@ What's already been done:
 ## Phase 2: Language Server Integration
 
 ### 2.1 Update Language Server Configuration
-- [ ] Add Civet configuration to the language server config
-- [ ] Add a new `civet` section to the `LSConfig` interface
-- [ ] Add default configuration values for Civet
+- [x] Add Civet configuration to the language server config
+- [x] Add a new `civet` section to the `LSConfig` interface
+- [x] Add default configuration values for Civet
 
 ### 2.2 Create Civet Language Service
-- [ ] Create a plugin for Civet language support
-- [ ] Implement a service similar to TypeScript/JavaScript services
-- [ ] Handle language features like diagnostics, hover, completions
+- [x] Create a plugin for Civet language support
+- [x] Implement a service similar to TypeScript/JavaScript services
+- [x] Handle language features like diagnostics, hover, completions
 
 ### 2.3 Register Civet Plugin in Plugin Host
-- [ ] Register the Civet plugin in the plugin host
-- [ ] Add Civet plugin to the exported plugins
-- [ ] Register the plugin in the server initialization
+- [x] Register the Civet plugin in the plugin host
+- [x] Add Civet plugin to the exported plugins
+- [x] Register the plugin in the server initialization
 
 ### 2.4 Add Civet Dependencies
 - [ ] Add any necessary Civet-related dependencies
