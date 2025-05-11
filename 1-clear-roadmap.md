@@ -13,15 +13,17 @@ What's already been done:
 - TextMate grammar configuration has been updated to include Civet language support in script tags
 - Package configuration has been updated to include Civet in embeddedLanguages
 - A dummy Civet grammar file has been created for testing purposes
+- Real Civet grammar is available in `civet-syntax/syntaxes/civet.json` (with supporting files) ready for integration
 
 # Implementation Tree
 
 ## Phase 1: Complete TextMate Grammar Integration
 
 ### 1.1 Replace Dummy Civet Grammar with Real Implementation
-- Create proper TextMate grammar for Civet or import an existing one
-- Define token types, patterns, and scopes for Civet syntax
-- Include support for Civet-specific syntax features
+- Copy the real Civet TextMate grammar `civet.json` from `civet-syntax/syntaxes` into `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`
+- (Optionally) copy supporting files like `civet-configuration.json` or `codeblock.json` as needed
+- Remove the dummy Civet grammar `packages/svelte-vscode/test/grammar/dummy/civet.tmLanguage-dummy.json`
+- Ensure the grammar’s `scopeName` is `source.civet` and that it correctly tokenizes Civet constructs per the cheatsheet
 
 ### 1.2 Update Svelte Grammar to Properly Handle Civet
 - Ensure the Civet injection pattern is correctly configured
@@ -112,33 +114,33 @@ What's already been done:
 # Files to be Modified
 
 ## Phase 1: TextMate Grammar Integration
-1. `packages/svelte-vscode/test/grammar/dummy/civet.tmLanguage-dummy.json` → Create new file `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`
-2. `packages/svelte-vscode/syntaxes/svelte.tmLanguage.src.yaml` - Update Civet injection patterns
-3. Create new file `packages/svelte-vscode/test/grammar/samples/script-civet/input.svelte` - Test sample
+1. Copy `civet-syntax/syntaxes/civet.json` to `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`
+2. Remove `packages/svelte-vscode/test/grammar/dummy/civet.tmLanguage-dummy.json`
+3. `packages/svelte-vscode/syntaxes/svelte.tmLanguage.src.yaml` - Update Civet injection patterns (verify already correct)
+4. Create new file `packages/svelte-vscode/test/grammar/samples/script-civet/input.svelte` - Test sample
 
 ## Phase 2: Language Server Integration
-4. `packages/language-server/src/ls-config.ts` - Add Civet configuration
-5. Create new files:
+5. `packages/language-server/src/ls-config.ts` - Add Civet configuration
+6. Create new files:
    - `packages/language-server/src/plugins/civet/index.ts`
    - `packages/language-server/src/plugins/civet/CivetPlugin.ts`
    - `packages/language-server/src/plugins/civet/service.ts`
-6. `packages/language-server/src/plugins/index.ts` - Export Civet plugin
-7. `packages/language-server/src/server.ts` - Register Civet plugin
-8. `packages/language-server/package.json` - Add Civet dependencies
+7. `packages/language-server/src/plugins/index.ts` - Export Civet plugin
+8. `packages/language-server/src/server.ts` - Register Civet plugin
+9. `packages/language-server/package.json` - Add Civet dependencies
 
 ## Phase 3: Preprocessor Integration
-9. `packages/language-server/src/plugins/svelte/SveltePlugin.ts` - Add Civet preprocessor support
-10. `packages/language-server/src/lib/documents/Document.ts` - Update to handle Civet scripts
-11. `packages/svelte2tsx/src/index.ts` - Add support for converting Civet to TSX
+10. `packages/language-server/src/plugins/svelte/SveltePlugin.ts` - Add Civet preprocessor support
+11. `packages/language-server/src/lib/documents/Document.ts` - Update to handle Civet scripts
+12. `packages/svelte2tsx/src/index.ts` - Add support for converting Civet to TSX
 
 ## Phase 4: IDE Integration and Testing
-12. `packages/svelte-vscode/package.json` - Verify configuration
-13. Create new file `packages/svelte-vscode/test/suite/civet.test.ts` - End-to-end tests
-14. `packages/svelte-vscode/README.md` - Update documentation
-15. `README.md` - Update main documentation
+13. `packages/svelte-vscode/package.json` - Verify configuration
+14. Create new file `packages/svelte-vscode/test/suite/civet.test.ts` - End-to-end tests
+15. `packages/svelte-vscode/README.md` - Update documentation
+16. `README.md` - Update main documentation
 
 ## Phase 5: Release and Distribution
-16. `packages/svelte-vscode/package.json` - Version bump
-17. `packages/language-server/package.json` - Version bump
-18. `CHANGELOG.md` - Add Civet support entries
-
+17. `packages/svelte-vscode/package.json` - Version bump
+18. `packages/language-server/package.json` - Version bump
+19. `CHANGELOG.md` - Add Civet support entries
