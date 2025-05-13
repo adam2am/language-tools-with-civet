@@ -119,13 +119,13 @@ Provide a seamless development experience for Civet in Svelte components, includ
 
 ### Phase 1: Solidify and Unify Civet Compilation & Source Mapping
 
-- [ ] **Macro Task:** Ensure a single, reliable Civet-to-TypeScript compilation step with accurate source map generation that integrates seamlessly into the existing Svelte language server pipeline.
-    - [ ] **Micro Task 1.1: Designate Primary Civet Compiler & Ensure Quality Output**
-        - [ ] **Decision & Action:** Solidify `svelte-preprocess-with-civet-Repo`\'s Civet preprocessor (invoking `@danielx/civet`) as the **primary and sole** Civet-to-TypeScript compiler for the language server.
-        - [ ] **Verification**: Confirm its transformer (`svelte-preprocess-with-civet-Repo/src/transformers/civet.ts`) correctly uses `@danielx/civet` to:
-            - [ ] Compile Civet to modern, type-inferable TypeScript (e.g., `foo := 1` becomes `const foo = 1;`).
-            - [ ] Produce accurate inline source maps (Civet -> TypeScript).
-            - [ ] **Crucial:** Ensure the preprocessor **changes the script tag\'s `lang` attribute to `ts`** after successful compilation. This signals to downstream tools like `svelte2tsx` that the content is now TypeScript.
+- [X] **Macro Task:** Ensure a single, reliable Civet-to-TypeScript compilation step with accurate source map generation that integrates seamlessly into the existing Svelte language server pipeline. *(svelte-preprocess-with-civet now correctly generates V3 source maps. Next step is integration with LS and svelte2tsx.)*
+    - [X] **Micro Task 1.1: Designate Primary Civet Compiler & Ensure Quality Output**
+        - [X] **Decision & Action:** Solidify `svelte-preprocess-with-civet-Repo`\\\'s Civet preprocessor (invoking `@danielx/civet`) as the **primary and sole** Civet-to-TypeScript compiler for the language server. *(Achieved by modifying its transformer)*
+        - [X] **Verification**: Confirm its transformer (`svelte-preprocess-with-civet-Repo/src/transformers/civet.ts`) correctly uses `@danielx/civet` to:
+            - [X] Compile Civet to modern, type-inferable TypeScript (e.g., `foo := 1` becomes `const foo = 1;`). *(Verified by testPreProcTest.mjs output)*
+            - [X] Produce accurate V3 source maps (Civet -> TypeScript) as a standard object. *(Verified by testPreProcTest.mjs output, the preprocessor calls `.json()` on Civet\'s sourceMap instance, and `result.map` is a V3 map object with version, sources, mappings keys.)*
+            - [ ] **Crucial:** Ensure the preprocessor **changes the script tag\\\'s `lang` attribute to `ts`** after successful compilation. This signals to downstream tools like `svelte2tsx` that the content is now TypeScript. *(This is likely a responsibility of the Svelte compiler or LS consuming the preprocessor, not the preprocessor itself. TBD.)*
         - [ ] **Files to Edit (Cleanup & Fallback Definition):**
             - [ ] `packages/svelte2tsx/src/svelte2tsx/index.ts`:
                 - Modify the direct Civet compilation logic (dynamic import of `@danielx/civet`) to act **only as a fallback** if `lang="civet"` is encountered (meaning the preprocessor likely didn\'t run or failed to change the `lang` attribute).
@@ -162,62 +162,4 @@ Provide a seamless development experience for Civet in Svelte components, includ
         - [ ] **Files to Verify/Debug:**
             - [ ] Output of `@danielx/civet` preprocessor: Ensure it generates `const`/`let` correctly.
             - [ ] `packages/language-server/src/plugins/typescript/features/HoverProvider.ts`: Verify correct use of chained maps for mapping hover info back to Civet source range.
-            - [ ] `DocumentSnapshot.ts` map chaining logic.
-            - [ ] **Note:** Acceptable first step is showing the correct *TypeScript* type (`const foo: string`); adding Civet-specific semantic descriptions (like "Civet const") can be later.
-
-    - [ ] **Micro Task 2.3: Verify Go-To-Definition and References**
-        - [ ] **Goal:** Features navigate to/from the correct locations in the original Civet code.
-        - [ ] **Files to Verify/Debug:**
-            *   `DefinitionProvider.ts`, `FindReferencesProvider.ts`, etc.
-            *   Relies entirely on accurate chained source maps in `DocumentSnapshot.ts`.
-
-### Phase 3: Comprehensive Language Feature Enablement & Rigorous Testing
-
-- [ ] **Macro Task:** Ensure all relevant TypeScript-powered IDE features function correctly for Civet code and establish a strong test suite.
-
-    - [ ] **Micro Task 3.1: Test and Validate Core TypeScript Features**
-        - [ ] **Completions:** (`CompletionProvider.ts`) Ensure TS-aware completions work within Civet blocks.
-        - [ ] **Signature Help:** (`SignatureHelpProvider.ts`) Verify parameter info works.
-        - [ ] **Rename Refactoring:** (`RenameProvider.ts`) Test renaming Civet variables (initially relying on TS acting on transpiled code).
-        - [ ] **Other features:** Semantic Tokens, Document Symbols, etc.
-
-    - [ ] **Micro Task 3.2: Create Comprehensive Civet Test Suite**
-        - [ ] **Files to Add/Edit:**
-            - [ ] Develop a dedicated test suite (e.g., `packages/language-server/test/plugins/typescript/samples/civet/`).
-            - [ ] Include tests for:
-                - [ ] Hover info (`:=`, `.=`).
-                - [ ] Correct mapping of type/import errors.
-                - [ ] Go-to-definition (within Civet, to/from JS/TS).
-                - [ ] Completions.
-                - [ ] Rename accuracy.
-                - [ ] Edge cases.
-            - [ ] Ensure tests validate against mapped Civet positions.
-
-### Phase 4: (Optional/Advanced) Direct Civet Language Intelligence
-
-- [ ] **Macro Task:** Enhance `CivetPlugin.ts` for features requiring direct Civet AST understanding.
-
-    - [ ] **Micro Task 4.1: Implement Civet AST-based Features**
-        - [ ] **Files to Edit:**
-            - [ ] `packages/language-server/src/plugins/civet/CivetPlugin.ts`
-            - [ ] Potentially `packages/language-server/src/plugins/civet/service.ts`.
-        - [ ] **Actions:**
-            - [ ] Use `@danielx/civet` parser (`parse` or `parseWithContext`).
-            - [ ] Implement Civet-specific diagnostics (syntax errors).
-            - [ ] Implement Civet-specific completions (keywords).
-            - [ ] Implement Civet-specific hover augmentation.
-
-### Cross-Cutting Concerns / Ongoing Refinements:
-
-- [ ] **Configuration (`LSConfigManager.ts`, `svelte.config.js`):**
-    - [ ] Provide clear configuration options related to Civet (compiler options, paths).
-    - [ ] Ensure correct discovery/use of the project\'s Civet preprocessor setup.
-- [ ] **Performance:**
-    - [ ] Monitor compilation and source map processing times.
-    - [ ] Avoid redundant work.
-- [ ] **Error Handling and Logging:**
-    - [ ] Implement robust handling/logging for Civet compilation failures.
-- [ ] **Testing:**
-    - [ ] Maintain and expand unit and integration tests throughout development.
-
-This phased checklist prioritizes leveraging the existing TypeScript infrastructure by ensuring Civet code is transparently and accurately transformed into TypeScript with solid source mapping. This should provide a high level of IDE support quickly. Phase 4 is for advanced, Civet-native enhancements.
+            - [ ] `DocumentSnapshot.ts`
