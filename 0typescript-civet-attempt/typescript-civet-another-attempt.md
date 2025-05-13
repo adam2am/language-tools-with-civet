@@ -124,18 +124,18 @@ Provide a seamless development experience for Civet in Svelte components, includ
         - [X] **Decision & Action:** Solidify `svelte-preprocess-with-civet-Repo`\\\'s Civet preprocessor (invoking `@danielx/civet`) as the **primary and sole** Civet-to-TypeScript compiler for the language server. *(Achieved by modifying its transformer)*
         - [X] **Verification**: Confirm its transformer (`svelte-preprocess-with-civet-Repo/src/transformers/civet.ts`) correctly uses `@danielx/civet` to:
             - [X] Compile Civet to modern, type-inferable TypeScript (e.g., `foo := 1` becomes `const foo = 1;`). *(Verified by testPreProcTest.mjs output)*
-            - [X] Produce accurate V3 source maps (Civet -> TypeScript) as a standard object. *(Verified by testPreProcTest.mjs output, the preprocessor calls `.json()` on Civet\'s sourceMap instance, and `result.map` is a V3 map object with version, sources, mappings keys.)*
-            - [ ] **Crucial:** Ensure the preprocessor **changes the script tag\\\'s `lang` attribute to `ts`** after successful compilation. This signals to downstream tools like `svelte2tsx` that the content is now TypeScript. *(This is likely a responsibility of the Svelte compiler or LS consuming the preprocessor, not the preprocessor itself. TBD.)*
+            - [X] Produce accurate V3 source maps (Civet -> TypeScript) as a standard object. *(Verified by testPreProcTest.mjs output, the preprocessor calls `.json()` on Civet's sourceMap instance, and `result.map` is a V3 map object with version, sources, mappings keys.)*
+            - [X] **Crucial:** Ensure the preprocessor **changes the script tag\'s `lang` attribute to `ts`** after successful compilation. This signals to downstream tools like `svelte2tsx` that the content is now TypeScript. *(Achieved: The transformer in `svelte-preprocess-with-civet/src/transformers/civet.ts` was updated to receive `attributes` and now wraps the compiled TS code with `<script lang="ts">` if `attributes.lang === 'civet'`. Verified with `testPreProcTest.mjs`.)*
         - [ ] **Files to Edit (Cleanup & Fallback Definition):**
             - [ ] `packages/svelte2tsx/src/svelte2tsx/index.ts`:
                 - Modify the direct Civet compilation logic (dynamic import of `@danielx/civet`) to act **only as a fallback** if `lang="civet"` is encountered (meaning the preprocessor likely didn\'t run or failed to change the `lang` attribute).
                 - This fallback path should be minimized/deprecated in favor of the preprocessor handling compilation.
                 - If the fallback *is* used, ensure it also handles source maps correctly (Civet -> TS within `svelte2tsx`).
 
-    - [ ] **Micro Task 1.2: Ensure Svelte Preprocessor Output (Code & Map) is Consumed**
-        - [ ] **Verification:** Trace the output of the `svelte-preprocess-with-civet-Repo` preprocessor.
-            - [ ] Confirm `packages/language-server/src/plugins/svelte/SvelteDocument.ts` correctly receives and stores both the compiled TypeScript code and the Civet-to-TypeScript source map when the `lang` attribute has been changed to `ts` by the preprocessor.
-            - [ ] Ensure `SvelteDocument` (or `TranspiledSvelteDocument`) makes this source map available for `DocumentSnapshot`.
+    - [X] **Micro Task 1.2: Ensure Svelte Preprocessor Output (Code & Map) is Consumed**
+        - [X] **Verification:** Trace the output of the `svelte-preprocess-with-civet-Repo` preprocessor.
+            - [X] Confirm `packages/language-server/src/plugins/svelte/SvelteDocument.ts` correctly receives and stores both the compiled TypeScript code and the Civet-to-TypeScript source map when the `lang` attribute has been changed to `ts` by the preprocessor. *(Achieved: Analysis of `SvelteDocument.ts` (specifically `TranspiledSvelteDocument.create`) shows it receives the `preprocessed.code` - which is now `<script lang="ts">...</script>` - and `preprocessed.map` - our Civet-to-TS V3 map. This map is then used to instantiate a `SourceMapDocumentMapper` within the `TranspiledSvelteDocument` instance.)*
+            - [X] Ensure `SvelteDocument` (or `TranspiledSvelteDocument`) makes this source map available for `DocumentSnapshot`. *(Achieved: The `TranspiledSvelteDocument` instance, accessible via `SvelteDocument.getTranspiled()`, contains the `SourceMapDocumentMapper` (as `this.mapper`), which holds our Civet-to-TS map. This `mapper` is used by its `getOriginalPosition` and `getGeneratedPosition` methods, making the map effectively available.)*
 
     - [ ] **Micro Task 1.3: Implement Robust Source Map Chaining in `DocumentSnapshot`**
         - [ ] **Goal:** `SvelteDocumentSnapshot` must flawlessly chain source maps: `Original .svelte (Civet) -> Preprocessed .svelte (TS from Civet) -> TSX`.
