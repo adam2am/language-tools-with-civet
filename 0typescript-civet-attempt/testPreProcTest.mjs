@@ -11,15 +11,13 @@ import { sveltePreprocess as civetPreprocessorFactory } from 'svelte-preprocess-
 // const civetPreprocessorFactory = require('svelte-preprocessor-with-civet');
 // --- End of import section to adjust ---
 
-// --- CORRECTED OPTIONS BASED ON FINDINGS ---
+// Configure the preprocessor as a user would: just request source maps.
+// The preprocessor internally should handle sync:true and call .json() on Civet's map.
 const preprocessorInstance = civetPreprocessorFactory({
     civet: { 
-        sync: true,      // Keep sync: true for synchronous preprocessor operation
-        inlineMap: true, // Use inlineMap: true as discovered
-        // sourceMap: true, // Remove or comment out sourceMap option
+        sourceMap: true, 
     } 
 });
-// --- END OF CORRECTED OPTIONS ---
 
 let actualScriptProcessor = preprocessorInstance;
 if (preprocessorInstance && typeof preprocessorInstance.script === 'function') {
@@ -30,62 +28,77 @@ if (preprocessorInstance && typeof preprocessorInstance.script === 'function') {
 
 async function runTest() {
     if (!actualScriptProcessor || typeof actualScriptProcessor.script !== 'function') {
-        console.error('ERROR: Could not get a valid script processor. \'actualScriptProcessor.script\' is not a function.');
-        console.error('preprocessorInstance received:', preprocessorInstance);
-        console.error('actualScriptProcessor derived:', actualScriptProcessor);
+        console.error('ERROR: Could not get a valid script processor.');
         return;
     }
 
-    const sampleCivetCode = `
+    const sampleCivetInnerCode = `
         class A
           @name
           age: number
 `;
+    const fullScriptContent = `<script lang="civet">${sampleCivetInnerCode}</script>`;
 
     const mockArgs = {
-        content: sampleCivetCode,
+        content: sampleCivetInnerCode, // Pass only the inner Civet code to the script processor
         attributes: { lang: 'civet' },
-        filename: 'test.svelte',
-        markup: sampleCivetCode // For Svelte 4+ markup is typically the full file content
+        filename: 'test.svelte', // Original filename
+        markup: fullScriptContent // markup can still contain the full script context
     };
 
-    console.log('--- Testing svelte-preprocessor-with-civet (Using { inlineMap: true, sync: true }) ---');
-    console.log('Input Civet Code:\n', sampleCivetCode);
-    console.log('\nCalling processor.script() with args:', JSON.stringify(mockArgs, null, 2));
+    console.log('--- Testing svelte-preprocess-with-civet (expecting V3 map from { sourceMap: true } and lang="ts" in output code) ---');
+    console.log('Original Full Script Content (for context):\n', fullScriptContent);
+    console.log('Input to processor.script() (content field):\n', sampleCivetInnerCode);
+    console.log('\nCalling processor.script() with args (attributes will guide lang change):', JSON.stringify({ attributes: mockArgs.attributes, filename: mockArgs.filename }, null, 2));
 
     try {
-        // Preprocessor script function might be sync or async, using await for safety
-        const result = await actualScriptProcessor.script(mockArgs); 
+        const result = await actualScriptProcessor.script(mockArgs);
 
         console.log('\n--- Preprocessor Result ---');
         if (result && typeof result.code === 'string') {
             console.log('Output Code (first 500 chars):\n', result.code.substring(0, 500));
-            if (result.code.length > 500) {
-                console.log('... (code truncated)');
-            }
+            if (result.code.length > 500) console.log('... (code truncated)');
 
-            if (result.code.includes('//# sourceMappingURL=data:application/json')) {
-                console.warn('\nWARNING: Output code *still* contains the inline source map comment. This suggests svelte-preprocess-with-civet might not be parsing/removing it.');
-            } else if (result.code.includes(':=') || result.code.includes(': ->')) {
-                console.warn('\nWARNING: Output code seems to contain Civet-specific syntax! Transformation might have failed internally.');
+            if (result.code.includes('<script lang="ts">')) {
+                console.log('\nSUCCESS (Code): Output code contains <script lang="ts"> as expected.');
+            } else if (result.code.includes('<script')) {
+                console.error(`\nERROR (Code): Output code contains a script tag, but lang attribute is not "ts". Found: ${result.code.match(/<script[^>]*>/)?.[0]}`);
             } else {
-                console.log('\nSUCCESS: Output code appears transformed and does not contain the inline map comment.');
+                console.error('\nERROR (Code): Output code does not seem to contain a script tag.');
             }
 
-            // Check source map
+            if (result.code.includes('//# sourceMappingURL')) {
+                console.error('\nERROR (Code): Output code UNEXPECTEDLY contains an inline source map comment.');
+            } else if (result.code.includes(':=') || result.code.includes(': ->')) {
+                console.warn('\nWARNING (Code): Output code still seems to contain Civet-specific syntax!');
+            } else {
+                console.log('\nSUCCESS (Code): Output code appears transformed and clean.');
+            }
+
             if (result.map) {
-                console.log('\nSource Map found: -> SUCCESS?');
-                if (typeof result.map === 'object') {
-                    console.log('  Type: object (Correct - preprocessor likely parsed the inline map!)');
-                    console.log('  Content: { ...map object... } (Keys:', Object.keys(result.map).join(', ') + ')');
-                } else if (typeof result.map === 'string') {
-                    console.warn('  Type: string (Incorrect - preprocessor returned the raw inline map string?)');
-                    console.log('  Content (first 200 chars):', result.map.substring(0, 200) + (result.map.length > 200 ? '...' : ''));
+                console.log('\nSource Map found: -> EXPECTED SUCCESS');
+                if (typeof result.map === 'object' && result.map !== null) {
+                    console.log('  Type: object (Correct)');
+                    const keys = Object.keys(result.map);
+                    console.log('  Map Object Keys:', keys.join(', '));
+                    // Check for key V3 map properties
+                    const hasVersion = keys.includes('version');
+                    const hasSources = keys.includes('sources');
+                    const hasMappings = keys.includes('mappings');
+                    const hasNames = keys.includes('names'); // Optional but common
+                    const hasSourcesContent = keys.includes('sourcesContent'); // Optional but common
+
+                    if (hasVersion && result.map.version === 3 && hasSources && hasMappings) {
+                        console.log('  VALIDATION: Key V3 properties (version, sources, mappings) found! Version:', result.map.version);
+                    } else {
+                        console.error('  VALIDATION ERROR: Missing key V3 properties or incorrect version. Version:', result.map.version);
+                    }
+                    // console.log('  Full Map Object:', JSON.stringify(result.map, null, 2)); // For detailed inspection
                 } else {
-                    console.warn('  Type: unknown (neither string nor object)');
+                    console.error('  ERROR: Expected map to be an object, but got:', typeof result.map);
                 }
             } else {
-                console.warn('\nWARNING: Source Map (result.map) NOT found in preprocessor output even though inlineMap was requested from Civet.');
+                console.error('\nERROR: Source Map (result.map) NOT found in preprocessor output.');
             }
 
         } else {
@@ -93,20 +106,8 @@ async function runTest() {
             console.log('Received result:', result);
         }
 
-        console.log('\nFull Result Object (Processed for brevity): ');
-        console.log(JSON.stringify(result, (key, value) => {
-            if ((key === 'code') && typeof value === 'string' && value.length > 200) {
-                return value.substring(0, 200) + '... (truncated)';
-            }
-            if (key === 'map') {
-                if (typeof value === 'string' && value.length > 100) return value.substring(0,100) + '...[string map truncated]...';
-                if (typeof value === 'object' && value !== null) return '{...map object...}';
-            }
-            if (key === 'dependencies' && Array.isArray(value) && value.length === 0) {
-                return undefined; 
-            }
-            return value;
-        }, 2));
+        // console.log('\nFull Result Object (Processed for brevity):');
+        // console.log(JSON.stringify(result, (key, value) => { /* ... truncation ... */ }, 2));
 
     } catch (error) {
         console.error('\n--- Preprocessor Execution Error --- ');

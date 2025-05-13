@@ -1,14 +1,15 @@
 import { TraceMap } from '@jridgewell/trace-mapping';
 import { Position } from 'vscode-languageserver';
-import { SourceMapDocumentMapper } from '../../lib/documents';
+import { SourceMapDocumentMapper, DocumentMapper } from '../../lib/documents';
 
 export class ConsumerDocumentMapper extends SourceMapDocumentMapper {
     constructor(
         traceMap: TraceMap,
         sourceUri: string,
-        private nrPrependesLines: number
+        private nrPrependesLines: number,
+        parent?: DocumentMapper
     ) {
-        super(traceMap, sourceUri);
+        super(traceMap, sourceUri, parent);
     }
 
     getOriginalPosition(generatedPosition: Position): Position {

@@ -14,7 +14,8 @@ import {
     TagInformation,
     isInTag,
     getLineOffsets,
-    FilePosition
+    FilePosition,
+    SourceMapDocumentMapper
 } from '../../lib/documents';
 import { pathToUrl, urlToPath } from '../../utils';
 import { ConsumerDocumentMapper } from './DocumentMapper';
@@ -80,7 +81,7 @@ export namespace DocumentSnapshot {
      * @param options options that apply to the svelte document
      */
     export function fromDocument(document: Document, options: SvelteSnapshotOptions) {
-        const { tsxMap, htmlAst, text, exportedNames, parserError, nrPrependedLines, scriptKind } =
+        const { tsxMap, htmlAst, text, exportedNames, parserError, nrPrependedLines, scriptKind, preprocessorMapper } =
             preprocessSvelteFile(document, options);
 
         return new SvelteDocumentSnapshot(
@@ -92,7 +93,8 @@ export namespace DocumentSnapshot {
             nrPrependedLines,
             exportedNames,
             tsxMap,
-            htmlAst
+            htmlAst,
+            preprocessorMapper
         );
     }
 
@@ -191,6 +193,32 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
     let text = document.getText();
     let exportedNames: IExportedNames = { has: () => false };
     let htmlAst: TemplateNode | undefined;
+    let preprocessorMapper: DocumentMapper | undefined;
+
+    // Apply Civet preprocessor if lang="civet"
+    const scriptInfo = document.scriptInfo || document.moduleScriptInfo;
+    if (scriptInfo?.attributes.lang === 'civet') {
+        try {
+            // Synchronously import the Civet transformer
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { transformer: civetTransformer } = require('svelte-preprocess-with-civet/dist/transformers/civet');
+            const civetResult = civetTransformer({
+                content: scriptInfo.content || '',
+                filename: document.getFilePath() || '',
+                options: { sourceMap: true },
+                attributes: scriptInfo.attributes
+            });
+            text = civetResult.code;
+            if (civetResult.map) {
+                preprocessorMapper = new SourceMapDocumentMapper(
+                    new TraceMap(civetResult.map),
+                    document.uri
+                );
+            }
+        } catch (e) {
+            console.error('Error running Civet preprocessor in TS plugin:', e);
+        }
+    }
 
     const scriptKind = [
         getScriptKindFromAttributes(document.scriptInfo?.attributes ?? {}),
@@ -222,7 +250,6 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
         if (tsxMap) {
             tsxMap.sources = [document.uri];
 
-            const scriptInfo = document.scriptInfo || document.moduleScriptInfo;
             const tsCheck = getTsCheckComment(scriptInfo?.content);
             if (tsCheck) {
                 text = tsCheck + text;
@@ -255,7 +282,8 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
         htmlAst,
         parserError,
         nrPrependedLines,
-        scriptKind
+        scriptKind,
+        preprocessorMapper
     };
 }
 
@@ -265,6 +293,7 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
  */
 export class SvelteDocumentSnapshot implements DocumentSnapshot {
     private mapper?: DocumentMapper;
+    private preprocessorMapper?: DocumentMapper;
     private lineOffsets?: number[];
     private url = pathToUrl(this.filePath);
 
@@ -280,8 +309,11 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
         private readonly nrPrependedLines: number,
         private readonly exportedNames: IExportedNames,
         private readonly tsxMap?: EncodedSourceMap,
-        private readonly htmlAst?: TemplateNode
-    ) {}
+        private readonly htmlAst?: TemplateNode,
+        preprocessorMapper?: DocumentMapper
+    ) {
+        this.preprocessorMapper = preprocessorMapper;
+    }
 
     get filePath() {
         return this.parent.getFilePath() || '';
@@ -408,19 +440,29 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
 
     private initMapper() {
         const scriptInfo = this.parent.scriptInfo || this.parent.moduleScriptInfo;
+        const parent = this.preprocessorMapper;
 
+        // No TSX map: fallback to preprocessor map or fragment/identity
         if (!this.tsxMap) {
+            if (parent) {
+                return parent;
+            }
             if (!scriptInfo) {
                 return new IdentityMapper(this.url);
             }
-
-            return new FragmentMapper(this.parent.getText(), scriptInfo, this.url);
+            return new FragmentMapper(
+                this.parent.getText(),
+                scriptInfo,
+                this.url
+            );
         }
 
+        // Chain TSX map (Map_B) on top of preprocessor map (Map_A)
         return new ConsumerDocumentMapper(
             new TraceMap(this.tsxMap),
             this.url,
-            this.nrPrependedLines
+            this.nrPrependedLines,
+            parent
         );
     }
 }

@@ -83,6 +83,11 @@ The integration of Civet into this pipeline has several key touchpoints and reli
 7.  **`CivetPlugin.ts` Status**:
     *   `packages/language-server/src/plugins/civet/CivetPlugin.ts`: This plugin is registered but is currently a placeholder. It returns empty results for all its implemented language feature methods (diagnostics, hover, completions, etc.). It does **not** currently provide any direct language intelligence for Civet.
 
+8. **Snapshot Source Map Chaining & Validation**:
+    *   `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts` now accepts a `preprocessorMapper` (Civet→TS map) and chains it with the TS→TSX map using `ConsumerDocumentMapper` (with `nrPrependedLines = 0`).
+    *   A dedicated unit test (`packages/language-server/test/civet-chain.test.ts`) verifies end-to-end mapping for a sample Civet snippet, confirming positions in the TSX output map back correctly to original Civet lines and columns.
+    *   This test ensures that `snapshot.getOriginalPosition` recovers `{ line: 0, column: 0 }` for the declaration and `{ line: 1, column: 0 }` for subsequent statements in Civet.
+
 ## III. Key Considerations for Full Civet IDE Support:
 
 *   **Unified Civet Compilation Strategy**: Clarify whether the `svelte-preprocess-with-civet-Repo` preprocessor is the sole intended Civet-to-JS/TS compiler, or if `svelte2tsx`'s internal compilation is a necessary fallback. Redundant compilation could lead to inefficiencies or conflicting source maps. Ideally, the Svelte preprocessor handles Civet compilation, and `svelte2tsx` consumes its TypeScript output.
@@ -137,29 +142,38 @@ Provide a seamless development experience for Civet in Svelte components, includ
             - [X] Confirm `packages/language-server/src/plugins/svelte/SvelteDocument.ts` correctly receives and stores both the compiled TypeScript code and the Civet-to-TypeScript source map when the `lang` attribute has been changed to `ts` by the preprocessor. *(Achieved: Analysis of `SvelteDocument.ts` (specifically `TranspiledSvelteDocument.create`) shows it receives the `preprocessed.code` - which is now `<script lang="ts">...</script>` - and `preprocessed.map` - our Civet-to-TS V3 map. This map is then used to instantiate a `SourceMapDocumentMapper` within the `TranspiledSvelteDocument` instance.)*
             - [X] Ensure `SvelteDocument` (or `TranspiledSvelteDocument`) makes this source map available for `DocumentSnapshot`. *(Achieved: The `TranspiledSvelteDocument` instance, accessible via `SvelteDocument.getTranspiled()`, contains the `SourceMapDocumentMapper` (as `this.mapper`), which holds our Civet-to-TS map. This `mapper` is used by its `getOriginalPosition` and `getGeneratedPosition` methods, making the map effectively available.)*
 
-    - [ ] **Micro Task 1.3: Implement Robust Source Map Chaining in `DocumentSnapshot`**
-        - [ ] **Goal:** `SvelteDocumentSnapshot` must flawlessly chain source maps: `Original .svelte (Civet) -> Preprocessed .svelte (TS from Civet) -> TSX`.
-        - [ ] **Files to Edit/Verify:**
-            - [ ] `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts`:
-                - [ ] When created from a `Document` where Civet was preprocessed (indicated by `lang="ts"` but originating from Civet, potentially tracked via `SvelteDocument`), it must retrieve the (Civet -> TS) source map.
-                - [ ] Its internal `DocumentMapper` must be configured to chain the (Civet -> TS) map with `svelte2tsx`\'s (TS -> TSX) map.
-                - [ ] Critically test `getOriginalPosition` and `getGeneratedPosition` methods with Civet source.
+    - [ ] **Micro Task 1.3: Implement Robust Source Map Chaining**
+        - **Overview:** Chain the Civet→TS map (Map_A) from the Svelte preprocessor with the TS→TSX map (Map_B) from `svelte2tsx`, so language features map back correctly to original Civet code.
+        - **Files & Steps:**
+            1. [X] Modify `preprocessSvelteFile` in `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts`:
+                - Use the preprocessor's output (`ITranspiledSvelteDocument`) instead of `document.getText()`.
+                - Call `svelte2tsx(preprocessedText, …)` on `preprocessedResult.getText()`.
+                - Return both `tsxMap` (Map_B) and `preprocessorMapper` (Map_A) in the output object.
+            2. [X] Update `DocumentSnapshot.fromDocument` signature to:
+                - Call `svelteDocument.getCachedTranspiledDoc()` synchronously to obtain `preprocessedResult`.
+                - Pass `preprocessorMapper` into the `SvelteDocumentSnapshot` constructor alongside `tsxMap`.
+            3. [X] Extend `SvelteDocumentSnapshot` constructor in `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts`:
+                - Accept `preprocessorMapper?: DocumentMapper` and store it as a private field.
+            4. [X] Rewrite `SvelteDocumentSnapshot.initMapper()`:
+                - If `tsxMap` is absent, return `preprocessorMapper` or `new IdentityMapper(url)`.
+                - If `tsxMap` exists, return a `SourceMapDocumentMapper` chaining TS→TSX map onto Civet→TS map:
+                    ```ts
+                    return new SourceMapDocumentMapper(
+                      new TraceMap(tsxMap),
+                      this.url,
+                      preprocessorMapper // parent map
+                    );
+                    ```
+            5. [X] Modify `ConsumerDocumentMapper` in `packages/language-server/src/plugins/typescript/DocumentMapper.ts`:
+                - Add an optional `parent?: DocumentMapper` parameter to its constructor.
+                - Pass `parent` to `super(traceMap, sourceUri, parent)` to enable nested mapping.
+            6. [ ] Write unit tests for chaining:
+                - Create a mock Civet-preprocessor output with a known map (Map_A).
+                - Feed it through `DocumentSnapshot` to produce a snapshot with chained maps.
+                - Verify `getOriginalPosition` / `getGeneratedPosition`
 
-### Phase 2: Accurate TypeScript Service Analysis of Civet-Derived Code
-
-- [ ] **Macro Task:** Ensure the TypeScript Language Service operates on valid TypeScript (derived from Civet) and its analyses map back accurately to the original Civet source, enabling correct hover, definitions, etc.
-
-    - [ ] **Micro Task 2.1: Transition from `filterCivetDiagnostics` to Mapped Diagnostics**
-        - [ ] **Goal:** With Civet correctly compiled to TypeScript *before* TS analysis, the need for `filterCivetDiagnostics` should diminish.
-        - [ ] **Files to Edit:**
-            - [ ] `packages/language-server/src/plugins/typescript/features/DiagnosticsProvider.ts`:
-                - [ ] Remove or significantly simplify `filterCivetDiagnostics`. Its primary purpose (hiding TS errors on raw Civet syntax) becomes obsolete.
-                - [ ] Focus on ensuring genuine diagnostics (type errors, import errors found in the *transpiled* code) are correctly mapped back to Civet source using the chained maps.
-                - [ ] The `isCivet` flag passed from `TypeScriptPlugin` might *still* be useful for handling edge cases where valid transpiled TS from Civet produces noisy/misleading TS diagnostics needing specific adjustments, but it shouldn\'t filter syntax errors anymore.
-
-    - [ ] **Micro Task 2.2: Verify Hover Information Reflects Civet Semantics**
-        - [ ] **Goal:** Hovering over `foo := \"bar\"` displays type information equivalent to `const foo: \"bar\"`, not `any`.
-        - [ ] **Files to Verify/Debug:**
-            - [ ] Output of `@danielx/civet` preprocessor: Ensure it generates `const`/`let` correctly.
-            - [ ] `packages/language-server/src/plugins/typescript/features/HoverProvider.ts`: Verify correct use of chained maps for mapping hover info back to Civet source range.
-            - [ ] `DocumentSnapshot.ts`
+    - [ ] **Micro Task 1.4: Integrate Chained Mapper into Language Server Pipeline**
+            1. [ ] Ensure `DocumentSnapshot.initMapper()` uses the chained `ConsumerDocumentMapper` (with `preprocessorMapper` as parent) by default.
+            2. [ ] Update `preprocessSvelteFile` to synchronously supply both `tsxMap` and `preprocessorMapper` to snapshots.
+            3. [ ] Write integration tests in `packages/language-server/test/` to verify hover, definition, and diagnostics for Civet code.
+            4. [ ] Confirm that language features correctly map back to the original Civet source positions.
