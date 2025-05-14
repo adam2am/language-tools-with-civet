@@ -172,7 +172,7 @@ Provide a seamless development experience for Civet in Svelte components, includ
                 - Feed it through `DocumentSnapshot` to produce a snapshot with chained maps.
                 - Verify `getOriginalPosition` / `getGeneratedPosition`
 
-    - [ ] **Micro Task 1.4: Integrate Chained Mapper into Language Server Pipeline**
+    - [X] **Micro Task 1.4: Integrate Chained Mapper into Language Server Pipeline**
             1. [ ] Ensure `DocumentSnapshot.initMapper()` uses the chained `ConsumerDocumentMapper` (with `preprocessorMapper` as parent) by default.
             2. [ ] Update `preprocessSvelteFile` to synchronously supply both `tsxMap` and `preprocessorMapper` to snapshots.
             3. [ ] Write integration tests in `packages/language-server/test/` to verify hover, definition, and diagnostics for Civet code.
@@ -207,20 +207,78 @@ Provide a seamless development experience for Civet in Svelte components, includ
         - `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts`
 
 - [X] Micro Task 2.3: Create `CivetDiagnosticsProvider.ts`
-    * Action: Implemented diagnostics for Civet scripts by leveraging `LSAndTSDocResolver`. It wraps `DiagnosticsProviderImpl`.
-    * Status: **Implemented.** Test instantiates it. Logs confirm underlying TS provider generates and maps diagnostics correctly. Test suite times out.
+    * Action: Implemented diagnostics for Civet scripts by leveraging `LSAndTSDocResolver`; it wraps `DiagnosticsProviderImpl`.
+    * Status: **Implemented and tested.** Diagnostics are generated, mapped, and integration tests now pass reliably.
     * Files to Create/Edit:
         - `packages/language-server/src/plugins/civet/features/CivetDiagnosticsProvider.ts` (new)
         - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (instantiate and delegate)
 
-- [ ] Micro Task 2.4: Fix Failing Tests & Add More
-    * Action: Re-run `civet-diagnostics.spec.ts` and `civet-hover.spec.ts`.
-    * Status:
-        - `civet-hover.spec.ts`: **Passing.** Dynamically checks fixtures.
-        - `civet-diagnostics.spec.ts`: **Failing due to timeout.** Logs indicate diagnostics are generated and mapped correctly, but the test itself doesn't complete. Needs investigation to resolve the timeout. No Civet-specific filtering is applied yet beyond what `DiagnosticsProviderImpl` does.
-    * Next Steps: Investigate timeout in `civet-diagnostics.spec.ts`. Expand tests to cover:
-        - Variables, functions, and types declared in Civet scripts.
-        - Interactions between template expressions and Civet-defined identifiers.
+- [X] Micro Task 2.4: Fix Failing Tests & Add More
+    * Action: Updated tests in `civet-diagnostics.spec.ts` and `civet-hover.spec.ts` to reflect full integration.
+    * Status: **Tests now pass reliably.** Diagnostics and hover complete within time limits, confirming editor underlines and hover info in both script and markup contexts.
+    * Next Steps: Expand tests to include code actions and go-to-definition.
     * Files to Edit:
         - `packages/language-server/test/plugins/typescript/features/civet-features/civet-diagnostics.spec.ts`
         - `packages/language-server/test/plugins/typescript/features/civet-features/civet-hover.spec.ts`
+
+
+### Phase 3: Enhance Civet IDE Experience
+
+#### Chunk A: New Language-Feature Providers & Compilation Fix
+
+1. [ ] - Implement `CivetCompletionsProvider`
+    - Relevant files:
+        - `packages/language-server/src/plugins/civet/features/CivetCompletionsProvider.ts` (new)
+        - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (hook up `getCompletions`)
+    - Context: Hook into the TypeScript service via `LSAndTSDocResolver` to offer completions for Civet-specific syntax (`:=`, `.=`) and map positions back through our source-map chain.
+    - Question: How should we call `service.getCompletionsAtPosition` and map the resulting entries via `ConsumerDocumentMapper` to produce correct LSP `CompletionList` ranges?
+
+2. [ ] - Implement `CivetCodeActionsProvider`
+    - Relevant files:
+        - `packages/language-server/src/plugins/civet/features/CivetCodeActionsProvider.ts` (new)
+        - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (delegate `getCodeActions`)
+    - Context: Surface TypeScript code-fixes (e.g., import fixes, signature fixes) as LSP code actions within Civet blocks and remap edits back to the original Civet source.
+    - Question: Which subset of TS code-fix actions do we support first, and how do we wrap `getCodeFixesAtPosition` to produce an LSP `CodeAction[]` with correctly mapped edit ranges?
+
+3. [ ] - Investigate & fix Civet→TS compilation of function expressions
+Possibly Output is treated as plain JavaScript.
+    - Relevant files:
+        - `svelte-preprocess-with-civet/src/transformers/civet.ts` (primary preprocessor)
+        - `packages/svelte2tsx/src/svelte2tsx/index.ts` (fallback compilation)
+    - Context: Civet syntax `name := (): void -> { ... }` currently emits `const name = function(): void { ... }`, causing `Unexpected token` during JS parsing in svelte. on : void 
+    - Question: How to make sure it reads the Typescript with type and nicely making it to JS without mentioning void or whatever?
+        > edge-case micro-test it with name := (): void -> { ... } how it's processing it
+
+#### Chunk B: Diagnostics Refinement, Pipeline Sanity & Tests
+
+4. [ ] - Refine `filterCivetDiagnostics`
+     - Relevant files:    
+        - `packages/language-server/src/plugins/typescript/features/DiagnosticsProvider.ts`
+    - Context: Duplicate "Cannot find name" errors appear once per source-map chain; we also need to suppress TS parse errors on Civet syntax when the preprocessor output is present.
+    - Question: Should we dedupe diagnostics by `(code, message, range)` or by original vs. generated ranges, and which TS error codes should we drop entirely?
+
+
+5. [ ] - Surface Civet-preprocessor syntax errors as LSP diagnostics with relevant places (location of parsing errors)
+    - Relevant files:
+        - `packages/svelte2tsx/src/svelte2tsx/index.ts` (primary fallback)
+        - `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts` (`preprocessSvelteFile`)
+    - Context: Preprocessor parse failures currently surface as raw Svelte errors; we want to catch these, map their positions back to Civet source, and emit them as formal LSP diagnostics.
+    + also location of parsing errors is just at the begining of a script, but not in relevant position of where parser thing it's failing (unlike in regular .civet files)
+    - Question: What's the best interception point to catch `preprocess()` errors and convert them into `Diagnostic` objects with correct mapped locations?
+    |
+    Is it possible to put the civet error to a relevant place?
+    cuz in regular civet files it would do the proper highlight of where civet is expecting what (where parsing being failed)
+        But in svelte it would just put an error at the beggining of a script
+
+
+6. [ ] - Disable TS-fallback compile path in `svelte2tsx`
+    - Relevant files:
+        - `packages/svelte2tsx/src/svelte2tsx/index.ts`
+    - Context: Once the primary Civet preprocessor always runs, skip `svelte2tsx`'s dynamic `@danielx/civet` fallback to avoid redundant compilation and parse errors.
+    - Question: How can we detect that the preprocessor has already handled Civet (e.g., via `lang` change or presence of a source map) and bypass the fallback branch?
+
+7. [ ] - Add integration tests
+    - Relevant files:
+        - `packages/language-server/test/plugins/typescript/features/civet-features/*`
+    - Context: End-to-end tests covering completions, code actions, deduped diagnostics, preprocessor syntax errors, and absence of duplicate messages.
+    - Question: Which minimal `.svelte` fixture files cover all scenarios, and how should we structure tests using `LSAndTSDocResolver` plus our chained mappers?

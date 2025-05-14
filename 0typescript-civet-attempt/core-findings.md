@@ -19,6 +19,58 @@ This document summarizes the investigation into enabling source maps for Civet c
 4. Fix and expand `civet-diagnostics.spec.ts` and `civet-hover.spec.ts`, validating diagnostics, hover, go-to-definition, and completions against the unified pipeline.
 5. Deprecate or fallback the direct Civet compile in `svelte2tsx` once the preprocessor path is robust.
 
+**Next Milestones (Phase 3):**
+
+#### Chunk A: New Language-Feature Providers & Compilation Fix
+
+1. Implement `CivetCompletionsProvider`
+   - Relevant files:
+     - `packages/language-server/src/plugins/civet/features/CivetCompletionsProvider.ts` (new)
+     - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (hook up `getCompletions`)
+   - Context: Hook into the TypeScript service via `LSAndTSDocResolver` to offer completions for Civet-specific syntax (`:=`, `.=`) and map positions back through our source-map chain.
+   - Question: How should we call `service.getCompletionsAtPosition` and map the resulting entries via `ConsumerDocumentMapper` to produce correct LSP `CompletionList` ranges?
+
+2. Implement `CivetCodeActionsProvider`
+   - Relevant files:
+     - `packages/language-server/src/plugins/civet/features/CivetCodeActionsProvider.ts` (new)
+     - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (delegate `getCodeActions`)
+   - Context: Surface TypeScript code-fixes (e.g., import fixes, signature fixes) as LSP code actions within Civet blocks and remap edits back to the original Civet source.
+   - Question: Which subset of TS code-fix actions do we support first, and how do we wrap `getCodeFixesAtPosition` to produce an LSP `CodeAction[]` with correctly mapped edit ranges?
+
+3. Investigate & fix Civet→TS compilation of function expressions
+   - Relevant files:
+     - `svelte-preprocess-with-civet/src/transformers/civet.ts` (primary preprocessor)
+     - `packages/svelte2tsx/src/svelte2tsx/index.ts` (fallback compilation)
+   - Context: Civet syntax `name := (): void -> { ... }` currently emits `const name = function(): void { ... }`, causing `Unexpected token` during TS parsing. It should instead generate an arrow function `const name = (): void => { ... }`.
+   - Question: How can we detect `->` with explicit return types in the transformer and emit a TS arrow function rather than a `function` expression?
+
+#### Chunk B: Diagnostics Refinement, Pipeline Sanity & Tests
+
+4. Refine `filterCivetDiagnostics`
+   - Relevant files:
+     - `packages/language-server/src/plugins/typescript/features/DiagnosticsProvider.ts`
+   - Context: Duplicate "Cannot find name" errors appear once per source-map chain; we also need to suppress TS parse errors on Civet syntax when the preprocessor output is present.
+   - Question: Should we dedupe diagnostics by `(code, message, range)` or by original vs. generated ranges, and which TS error codes should we drop entirely?
+
+5. Surface Civet-preprocessor syntax errors as LSP diagnostics
+   - Relevant files:
+     - `packages/language-server/src/plugins/svelte/SvelteDocument.ts` (`TranspiledSvelteDocument.create`)
+     - `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts` (`preprocessSvelteFile`)
+   - Context: Preprocessor parse failures currently surface as raw Svelte errors; we want to catch these, map their positions back to Civet source, and emit them as formal LSP diagnostics.
+   - Question: What's the best interception point to catch `preprocess()` errors and convert them into `Diagnostic` objects with correct mapped locations?
+
+6. Disable TS-fallback compile path in `svelte2tsx`
+   - Relevant files:
+     - `packages/svelte2tsx/src/svelte2tsx/index.ts`
+   - Context: Once the primary Civet preprocessor always runs, skip `svelte2tsx`'s dynamic `@danielx/civet` fallback to avoid redundant compilation and parse errors.
+   - Question: How can we detect that the preprocessor has already handled Civet (e.g., via `lang` change or presence of a source map) and bypass the fallback branch?
+
+7. Add integration tests
+   - Relevant files:
+     - `packages/language-server/test/plugins/typescript/features/civet-features/*`
+   - Context: End-to-end tests covering completions, code actions, deduped diagnostics, preprocessor syntax errors, and absence of duplicate messages.
+   - Question: Which minimal `.svelte` fixture files cover all scenarios, and how should we structure tests using `LSAndTSDocResolver` plus our chained mappers?
+
 ## Verified End-to-End Source Map Chaining
 
 *   The new unit test `packages/language-server/test/civet-chain.test.ts` runs an end-to-end Civet→TS→TSX chain within `SvelteDocumentSnapshot` and `ConsumerDocumentMapper`.
@@ -39,6 +91,10 @@ This document summarizes the investigation into enabling source maps for Civet c
 # History-log:
 
 ## Read-only milestones bellow after being written (freshest=up, historically=down):
+**[18] - End-to-end IDE integration verified with editor diagnostics and hover for Civet scripts.**
+- Red underlines appear in `<div>` and other markup when Civet variables are missing.
+- Hovering over variables in both script and template contexts now shows correct type information from Civet.
+- Confirms the full pipeline (preprocessor → svelte2tsx → TS service) with accurate source map chaining is working in practice.
 **[17] - CivetHoverProvider tests pass; CivetDiagnosticsProvider gets correct diagnostics but test times out.**
 - `civet-hover.spec.ts` now uses `CivetHoverProvider` and correctly asserts hover content and range for `simple.svelte`.
 - `civet-diagnostics.spec.ts` now uses `CivetDiagnosticsProvider`. Logs show correct diagnostics being generated and mapped, but the test itself times out.
@@ -145,96 +201,4 @@ I'm noticing that the preprocessSvelteFile function currently only uses svelte2t
 [3]
 ### Fixed: `svelte-preprocess-with-civet` Transformer Outputs `<script lang="ts">`
 
-*   **Context:** To ensure downstream tools in the Svelte Language Server (especially `svelte2tsx`) correctly interpret the output of Civet preprocessing, it was determined that the preprocessor should explicitly change the script tag's language attribute from `civet` to `ts`.
-*   **Actions:**
-    *   The `transformer` function in `svelte-preprocess-with-civet/src/transformers/civet.ts` was modified to accept the script `attributes` as a parameter.
-    *   Logic was added to this transformer: if `attributes.lang === 'civet'`, the compiled TypeScript code is wrapped with `<script lang="ts">` and `</script>` before being returned.
-    *   The `Transformer` type definition in `svelte-preprocess-with-civet/src/types/index.ts` was confirmed to already support passing `attributes`.
-    *   The calling code in `svelte-preprocess-with-civet/src/autoProcess.ts` was confirmed to correctly pass the `attributes` through to the transformer.
-*   **Outcome & Validation:**
-    *   The `testPreProcTest.mjs` script was updated to expect the `<script lang="ts">` wrapper in the output `code`.
-    *   Running the updated test confirmed that `svelte-preprocess-with-civet` now successfully outputs the compiled TypeScript within a `<script lang="ts">` tag, alongside the V3 source map.
-    *   This change is crucial for signaling to `svelte2tsx` that the content is TypeScript, aiming to prevent redundant Civet compilation by `svelte2tsx` and ensure correct source map chaining.
-
-[2] 
-### Fixed: `svelte-preprocess-with-civet` Adopts Civet's Object-based Source Maps to a V3 out
-
-*   **Context:** Following the `SyntaxError` with `JSON.parse()` and insights into `@danielx/civet`'s ability to return a map object, `svelte-preprocess-with-civet` was updated.
-*   **Thoughts:** The map object from `@danielx/civet` (keys observed: `data, source, renderMappings, json, updateSourceMap`) is **not standard V3 SourceMap format**.
-*   **Actions:** Investigate this format. Determine if it can be converted to V3 or used directly by `svelte2tsx` / TypeScript Language Service. These tools typically expect V3.
-*   **Modification:** The transformer in `svelte-preprocess-with-civet/src/transformers/civet.ts` was modified:
-    *   It began passing `{ sync: true, js: false }` to `@danielx/civet` generally.
-    *   When source maps were requested by the user (e.g., `sveltePreprocess({ civet: { sourceMap: true } })`), it specifically instructed `@danielx/civet` to return a map object by including `sourceMap: true` in its compilation options.
-    *   `@danielx/civet` would then return an object like `{ code: "...", sourceMap: { ...mapObject... } }`.
-    *   The transformer was updated to use this structure, returning `{ code: civetResult.code, map: civetResult.sourceMap }` to Svelte.
-    *   The `Options.Civet` type definition (in `svelte-preprocess-with-civet-Repo/src/types/options.ts`) was also augmented with `inlineMap?: boolean;` to reflect compiler option capabilities.
-*   **Outcome & Validation:**
-    *   The `SyntaxError: Unexpected token o in JSON` was resolved.
-    *   Test runs (e.g., with `testPreProcTest.mjs` configured for source maps) confirmed that `result.code` was clean TypeScript, and `result.map` now contained the raw map object directly from Civet.
-
-### Discovery: Civet's Native Source Map Object is Non-Standard
-
-*   **Observation:** Upon successfully retrieving the source map object from `@danielx/civet` via `svelte-preprocess-with-civet`, further inspection revealed its structure.
-*   **Format:** The map object (with keys like `data, source, renderMappings, json, updateSourceMap`) was identified as **not conforming to the standard V3 SourceMap format** commonly expected by downstream tools like `svelte2tsx` and the TypeScript Language Service.
-*   **Implication:** This new challenge meant this custom Civet map object would need conversion to V3 or a method for downstream tools to consume it directly before the V3 map generation (described in the current status section) was achieved.
-
-
-
-
-[1]
-### Initial Behaviors of `svelte-preprocess-with-civet`
-
-*   **State+question:** Using `sourceMap: true` with `svelte-preprocess-with-civet` caused a `SyntaxError: Unexpected token o in JSON at position 1`.
-*   **Reason:** The preprocessor was incorrectly trying to `JSON.parse()` the output from `@danielx/civet` when source maps were enabled, regardless of the actual output structure.
-
-### `@danielx/civet` Source Map Generation Insights
-
-Investigation revealed how `Civet.compile()` behaves with different options:
-
-1.  **Preferred Method for Synchronous Code + Map Object:**
-    *   **Options:** `{ sourceMap: true, sync: true, js: false }`
-    *   **Returns:** An object: `{ code: "compiled TS", sourceMap: { ...mapData... } }`.
-    *   **Significance:** This became the target for `svelte-preprocess-with-civet`.
-
-2.  **Synchronous Code + Inline String Map:**
-    *   **Options:** `{ inlineMap: true, sync: true, js: false }`
-    *   **Returns:** A string: `"compiled TS code... //# sourceMappingURL=..."`.
-    *   **Significance:** A viable, but less direct, way to get maps. Would require parsing the inline comment.
-
-3.  **Asynchronous Code + Inline String Map:**
-    *   **Options:** `await Civet.compile(civetCode, { inlineMap: true, js: false })`
-    *   **Returns:** A string: `"compiled TS code... //# sourceMappingURL=..."`.
-
-4.  **Incorrect Synchronous Attempts (Resulting in Empty Object `{}` from Civet):**
-    *   `{ sourceMap: true, js: false }` (without `sync: true`)
-    *   `{ inlineMap: true, js: false }` (without `sync: true`)
-
-### Intermediate Test of `svelte-preprocess-with-civet` (Before Final Fix)
-
-*   **Scenario:** Configured with `{ civet: { inlineMap: true, sync: true } }`.
-*   **Result:**
-    *   JSON error resolved (as Civet returned a string).
-    *   `result.code` contained TS + the inline map comment.
-    *   `result.map` was undefined (preprocessor didn't parse the inline map).
-*   **Learning:** Confirmed the preprocessor needed logic to handle Civet's output string if inline maps were used, but also highlighted the need for a more direct object-based map if possible.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+*   **Context:** To ensure downstream tools in the Svelte Language Server (especially `svelte2tsx`) correctly interpret the output of Civet preprocessing, it was determined that the preprocessor should explicitly change the script tag's language attribute from `civet`
