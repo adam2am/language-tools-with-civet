@@ -177,3 +177,37 @@ Provide a seamless development experience for Civet in Svelte components, includ
             2. [ ] Update `preprocessSvelteFile` to synchronously supply both `tsxMap` and `preprocessorMapper` to snapshots.
             3. [ ] Write integration tests in `packages/language-server/test/` to verify hover, definition, and diagnostics for Civet code.
             4. [ ] Confirm that language features correctly map back to the original Civet source positions.
+
+### Phase 2: Integrate Civet Features into the Main Svelte/TS Pipeline
+
+- [ ] Micro Task 2.1: Refactor CivetHoverProvider (and upcoming CivetDiagnosticsProvider) to use the existing LSAndTSDocResolver
+    * Problem: CivetHoverProvider.ts currently sets up its own ts.LanguageService and a simplified SvelteDocumentSnapshot, bypassing the main language server pipeline.
+    * Solution: Modify `CivetPlugin.ts` to accept an `LSAndTSDocResolver` instance and pass it into `CivetHoverProvider` (and later `CivetDiagnosticsProvider`); update providers to use `resolver.getLSAndTSDoc(document)` and the canonical TS service instead of manual setup.
+    * Files to Edit:
+        - `packages/language-server/src/plugins/civet/CivetPlugin.ts`
+        - `packages/language-server/src/plugins/civet/features/CivetHoverProvider.ts`
+        - (Later) `packages/language-server/src/plugins/civet/features/CivetDiagnosticsProvider.ts`
+
+- [ ] Micro Task 2.2: Ensure `DocumentSnapshot.ts` Handles Civet Path Correctly for LSAndTSDocResolver
+    * Context: `preprocessSvelteFile` currently returns early for `<script lang="civet">`, skipping the full Svelte→TSX transform.
+    * Problem: The language server snapshot lacks template processing, so hover/diagnostics spanning template and script will not work.
+    * Solution: In `preprocessSvelteFile`, after generating the Civet-to-TS snippet and its source map, inject that TS snippet back into the complete Svelte file text (with `lang="ts"`), then run `svelte2tsx` so the TSX includes both template and script.
+    * Files to Edit:
+        - `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts`
+
+- [ ] Micro Task 2.3: Create `CivetDiagnosticsProvider.ts`
+    * Action: Implement diagnostics for Civet scripts by leveraging `LSAndTSDocResolver`:
+        1. Use `resolver.getLSAndTSDoc(document)` to obtain `{ lang, tsDoc }`.
+        2. Call `lang.getSyntacticDiagnostics(tsDoc.filePath)` and `lang.getSemanticDiagnostics(tsDoc.filePath)`.
+        3. Map each diagnostic's text span back to the original Civet code via `tsDoc.getOriginalPosition`.
+    * Files to Create/Edit:
+        - `packages/language-server/src/plugins/civet/features/CivetDiagnosticsProvider.ts` (new)
+        - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (instantiate and delegate)
+
+- [ ] Micro Task 2.4: Fix Failing Tests & Add More
+    * Action: Re-run `civet-diagnostics.spec.ts` and `civet-hover.spec.ts`; with the above refactors, they should pass. Investigate any remaining mismatches in source-map mappings or position offsets. Expand tests to cover:
+        - Variables, functions, and types declared in Civet scripts.
+        - Interactions between template expressions and Civet-defined identifiers.
+    * Files to Edit:
+        - `packages/language-server/test/plugins/typescript/features/civet-features/civet-diagnostics.spec.ts`
+        - `packages/language-server/test/plugins/typescript/features/civet-features/civet-hover.spec.ts`

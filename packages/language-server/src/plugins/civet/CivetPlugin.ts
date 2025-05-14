@@ -17,6 +17,9 @@ import {
     Position,
     WorkspaceEdit
 } from 'vscode-languageserver';
+import { CivetHoverProvider } from './features/CivetHoverProvider';
+// Import other feature providers here as they are created
+// import { CivetDiagnosticsProvider } from './features/CivetDiagnosticsProvider';
 
 export class CivetPlugin implements
     DiagnosticsProvider,
@@ -26,14 +29,28 @@ export class CivetPlugin implements
     SelectionRangeProvider {
     __name = 'civet';
 
-    constructor(private configManager: LSConfigManager) {}
+    private hoverProvider: CivetHoverProvider;
+    // private diagnosticsProvider: CivetDiagnosticsProvider;
+
+    constructor(private configManager: LSConfigManager) {
+        this.hoverProvider = new CivetHoverProvider();
+        // this.diagnosticsProvider = new CivetDiagnosticsProvider(configManager, ...any other deps);
+    }
 
     async getDiagnostics(document: Document): Promise<Diagnostic[]> {
+        if (document.getLanguageAttribute('script') !== 'civet') {
+            return [];
+        }
+        // return this.diagnosticsProvider.getDiagnostics(document);
+        console.warn('CivetDiagnosticsProvider not yet implemented. Returning empty diagnostics.');
         return [];
     }
 
     async doHover(document: Document, position: Position): Promise<Hover | null> {
-        return null;
+        if (document.getLanguageAttribute('script') !== 'civet') {
+            return null;
+        }
+        return this.hoverProvider.doHover(document, position);
     }
 
     async getCompletions(
@@ -42,6 +59,11 @@ export class CivetPlugin implements
         _?: any,
         _token?: any
     ): Promise<CompletionList | null> {
+        if (document.getLanguageAttribute('script') !== 'civet') {
+            return null;
+        }
+        // TODO: Delegate to CivetCompletionsProvider
+        console.warn('CivetCompletionsProvider not yet implemented. Returning null.');
         return null;
     }
 
@@ -50,6 +72,11 @@ export class CivetPlugin implements
         range: Range,
         context: CodeActionContext
     ): Promise<CodeAction[]> {
+        if (document.getLanguageAttribute('script') !== 'civet') {
+            return [];
+        }
+        // TODO: Delegate to CivetCodeActionsProvider
+        console.warn('CivetCodeActionsProvider not yet implemented. Returning empty array.');
         return [];
     }
 
@@ -58,6 +85,11 @@ export class CivetPlugin implements
         command: string,
         _args?: any[]
     ): Promise<WorkspaceEdit | string | null> {
+        if (document.getLanguageAttribute('script') !== 'civet') {
+            return null;
+        }
+        // TODO: Delegate or handle Civet-specific commands
+        console.warn('CivetPlugin.executeCommand not yet implemented. Returning null.');
         return null;
     }
 
@@ -65,6 +97,11 @@ export class CivetPlugin implements
         document: Document,
         position: Position
     ): Promise<any> {
+        if (document.getLanguageAttribute('script') !== 'civet') {
+            return null;
+        }
+        // TODO: Delegate to CivetSelectionRangeProvider
+        console.warn('CivetSelectionRangeProvider not yet implemented. Returning null.');
         return null;
     }
 } 

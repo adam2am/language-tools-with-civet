@@ -6,7 +6,7 @@ import { ConsumerDocumentMapper } from '../src/plugins/typescript/DocumentMapper
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { internalHelpers, svelte2tsx } from 'svelte2tsx';
 import ts from 'typescript';
-import { dirname, resolve } from 'path';
+const { getCivetTransformer } = require('../src/plugins/civet/utils');
 
 const JSOrTSDocumentSnapshot = ActualJSOrTSDocumentSnapshot;
 
@@ -25,10 +25,8 @@ async function createChainTestSnapshot(civetCode: string, svelteFileContent: str
         typingsNamespace: 'svelteHTML'
     };
 
-    // Use synchronous transformer from svelte-preprocess-with-civet
-    const civetPkgIndex = require.resolve('svelte-preprocess-with-civet');
-    const civetPkgDir = dirname(civetPkgIndex);
-    const { transformer: civetTransformer } = require(resolve(civetPkgDir, 'transformers', 'civet.js'));
+    // Use shared helper to load the Civet transformer
+    const civetTransformer = getCivetTransformer();
     const civetResult = civetTransformer({
         content: civetCode,
         filename: 'test.svelte',

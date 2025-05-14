@@ -44,6 +44,28 @@ This document summarizes the investigation into enabling source maps for Civet c
 *   The dedicated `civet-chain.test.ts` confirms mapping behavior without affecting existing workflows.
 
 ## Read-only milestones bellow after being written (freshest=up, historically=down):
+[11]
+The core idea remains:
+In preprocessSvelteFile, when lang="civet":
+Get scriptInfo using extractScriptTags from the original document text.
+>
+Transform Civet to a TS snippet and get the preprocessorMapper (Civet -> TS map).
+Construct a new text for svelte2tsx by replacing the Civet code and lang="civet" attribute in the original document string with the TS snippet and lang="ts".
+>
+Proceed to call svelte2tsx with this modified text. This will produce the TSX code and the tsxMap (TS -> TSX map).
+>
+Return both tsxMap and preprocessorMapper.
+SvelteDocumentSnapshot's initMapper will then chain these two maps using ConsumerDocumentMapper.
+
+
+[10]
+Require('svelte-preprocess-with-civet') 
+→ grab its transformers/civet.js 
+→ run it synchronously on your <script lang="civet"> block.
+=
+It returns { code: string; map: SourceMap } and sets the script’s lang to "ts".
+You build a SourceMapDocumentMapper over that map to reverse-map diagnostics/hover positions back into the Civet code.
+
 [9]
 Looking at civet-diagnostics.spec.ts, the key part is how DocumentManager and LSAndTSDocResolver are set up. These components handle the preprocessing implicitly when a Svelte document with a Civet script tag is opened or processed.
 

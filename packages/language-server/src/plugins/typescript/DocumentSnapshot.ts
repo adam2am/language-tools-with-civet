@@ -31,6 +31,7 @@ import { dirname, resolve } from 'path';
 import { URI } from 'vscode-uri';
 import { surroundWithIgnoreComments } from './features/utils';
 import { configLoader } from '../../lib/documents/configLoader';
+import { getCivetTransformer } from '../civet/utils';
 
 /**
  * An error which occurred while trying to parse/preprocess the svelte file contents.
@@ -199,33 +200,49 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
     const scriptInfo = document.scriptInfo || document.moduleScriptInfo;
     if (scriptInfo?.attributes.lang === 'civet') {
         try {
-            // Synchronously import the Civet transformer
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { transformer: civetTransformer } = require('svelte-preprocess-with-civet/dist/transformers/civet');
+            // Use shared helper to load the Civet transformer
+            const civetTransformer = getCivetTransformer();
             const civetResult = civetTransformer({
                 content: scriptInfo.content || '',
                 filename: document.getFilePath() || '',
                 options: { sourceMap: true },
                 attributes: scriptInfo.attributes
             });
-            text = civetResult.code;
-            if (civetResult.map) {
+            const tsSnippet = civetResult.code;
+            let civetMap = civetResult.map;
+            // Build mapper from TS snippet back to Civet
+            if (civetMap) {
                 preprocessorMapper = new SourceMapDocumentMapper(
-                    new TraceMap(civetResult.map),
-                    document.uri
+                    new TraceMap(civetMap),
+                    urlToPath(document.uri)!
                 );
             }
+            // Return TS-only snapshot, skipping svelte2tsx
+            return {
+                tsxMap: undefined,
+                text: tsSnippet,
+                exportedNames,
+                htmlAst: undefined,
+                parserError,
+                nrPrependedLines: 0,
+                scriptKind: ts.ScriptKind.TS,
+                preprocessorMapper
+            };
         } catch (e) {
             console.error('Error running Civet preprocessor in TS plugin:', e);
         }
     }
 
-    const scriptKind = [
+    // Determine base scriptKind from attributes
+    const autoScriptKind = [
         getScriptKindFromAttributes(document.scriptInfo?.attributes ?? {}),
         getScriptKindFromAttributes(document.moduleScriptInfo?.attributes ?? {})
     ].includes(ts.ScriptKind.TSX)
         ? ts.ScriptKind.TS
         : ts.ScriptKind.JS;
+    // Override for Civet blocks: treat as TypeScript
+    const scriptKind: ts.ScriptKind =
+        scriptInfo?.attributes.lang === 'civet' ? ts.ScriptKind.TS : autoScriptKind;
 
     try {
         const tsx = svelte2tsx(text, {
@@ -246,6 +263,11 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
         exportedNames = tsx.exportedNames;
         // We know it's there, it's not part of the public API so people don't start using it
         htmlAst = (tsx as any).htmlAst;
+
+        console.log('==== svelte2tsx Output ====');
+        console.log('Code:\n', text);
+        console.log('Map:\n', JSON.stringify(tsxMap, null, 2));
+        console.log('==========================');
 
         if (tsxMap) {
             tsxMap.sources = [document.uri];
