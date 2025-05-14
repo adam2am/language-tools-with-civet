@@ -5,7 +5,7 @@ Logger.setDebug(true);
 import ts from 'typescript';
 import { Document, DocumentManager } from '../../../../src/lib/documents';
 import { LSAndTSDocResolver } from '../../../../src/plugins/typescript/LSAndTSDocResolver';
-import { DiagnosticsProviderImpl } from '../../../../src/plugins/typescript/features/DiagnosticsProvider';
+import { CivetDiagnosticsProvider } from '../../../../src/plugins/civet/features/CivetDiagnosticsProvider';
 import { LSConfigManager } from '../../../../src/ls-config';
 import { pathToUrl } from '../../../../src/utils';
 
@@ -22,7 +22,7 @@ describe('Civet Diagnostics Feature', () => {
       [pathToUrl(fixturesDir)],
       new LSConfigManager()
     );
-    const provider = new DiagnosticsProviderImpl(resolver, new LSConfigManager());
+    const provider = new CivetDiagnosticsProvider(resolver, new LSConfigManager());
     const content = ts.sys.readFile(filePath) || '';
     const document = docManager.openClientDocument(<any>{
       uri: pathToUrl(filePath),

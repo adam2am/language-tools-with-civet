@@ -18,6 +18,7 @@ import {
     WorkspaceEdit
 } from 'vscode-languageserver';
 import { CivetHoverProvider } from './features/CivetHoverProvider';
+import { CivetDiagnosticsProvider } from './features/CivetDiagnosticProvider';
 import { LSAndTSDocResolver } from '../typescript/LSAndTSDocResolver';
 // Import other feature providers here as they are created
 // import { CivetDiagnosticsProvider } from './features/CivetDiagnosticsProvider';
@@ -31,20 +32,18 @@ export class CivetPlugin implements
     __name = 'civet';
 
     private hoverProvider: CivetHoverProvider;
-    // private diagnosticsProvider: CivetDiagnosticsProvider;
+    private diagnosticsProvider: CivetDiagnosticsProvider;
 
     constructor(private configManager: LSConfigManager, private lsAndTsDocResolver: LSAndTSDocResolver) {
         this.hoverProvider = new CivetHoverProvider(this.lsAndTsDocResolver);
-        // this.diagnosticsProvider = new CivetDiagnosticsProvider(configManager, ...any other deps);
+        this.diagnosticsProvider = new CivetDiagnosticsProvider(this.lsAndTsDocResolver, this.configManager);
     }
 
     async getDiagnostics(document: Document): Promise<Diagnostic[]> {
         if (document.getLanguageAttribute('script') !== 'civet') {
             return [];
         }
-        // return this.diagnosticsProvider.getDiagnostics(document);
-        console.warn('CivetDiagnosticsProvider not yet implemented. Returning empty diagnostics.');
-        return [];
+        return this.diagnosticsProvider.getDiagnostics(document);
     }
 
     async doHover(document: Document, position: Position): Promise<Hover | null> {

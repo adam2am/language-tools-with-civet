@@ -37,6 +37,15 @@ This document summarizes the investigation into enabling source maps for Civet c
 # History-log:
 
 ## Read-only milestones bellow after being written (freshest=up, historically=down):
+**[17] - CivetHoverProvider tests pass; CivetDiagnosticsProvider gets correct diagnostics but test times out.**
+- `civet-hover.spec.ts` now uses `CivetHoverProvider` and correctly asserts hover content and range for `simple.svelte`.
+- `civet-diagnostics.spec.ts` now uses `CivetDiagnosticsProvider`. Logs show correct diagnostics being generated and mapped, but the test itself times out.
+- Both providers correctly use the shared `LSAndTSDocResolver`.
+
+
+[16] - [big] - positive civetHover update, now it's showing some content, just little bit off, already not a null tho
+also the diagnostic is not in civetDiagnostic, probably wanna move it there as well
+
 [15] - [big] - test on civet diagnostic works, 
 but for some reason it goes sometimes beyond 2s? 
 
@@ -51,9 +60,9 @@ You need to change the expected character to 11:
 
 [13]
 Caveats / potential refinements:
-Make sure svelte2tsx’s fallback Civet compile is disabled once your preprocessor is rock-solid.
+Make sure svelte2tsx's fallback Civet compile is disabled once your preprocessor is rock-solid.
 Watch performance (two transforms + map chaining), but in practice both steps are fast and synchronous.
-Eventually you can upstream a svelte2tsx hook for custom preprocessors so that extension authors don’t need their own mapper logic.
+Eventually you can upstream a svelte2tsx hook for custom preprocessors so that extension authors don't need their own mapper logic.
 
 [12]
 **Original Phase 1 Status & Next Milestone**
