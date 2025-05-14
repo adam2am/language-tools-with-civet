@@ -246,6 +246,11 @@ Possibly Output is treated as plain JavaScript.
         - `svelte-preprocess-with-civet/src/transformers/civet.ts` (primary preprocessor)
         - `packages/svelte2tsx/src/svelte2tsx/index.ts` (fallback compilation)
     - Context: Civet syntax `name := (): void -> { ... }` currently emits `const name = function(): void { ... }`, causing `Unexpected token` during JS parsing in svelte. on : void 
+    Unexpected token = https://svelte.dev/e/js_parse_error
+    If you expect this syntax to work, here are some suggestions: 
+    If you use typescript with `svelte-preprocess`, did you add `lang="ts"` to your `script` tag? 
+    Did you setup a `svelte.config.js`? 
+    See https://github.com/sveltejs/language-tools/tree/master/docs#using-with-preprocessors for more info.svelte(js_parse_error)
     - Question: How to make sure it reads the Typescript with type and nicely making it to JS without mentioning void or whatever?
         > edge-case micro-test it with name := (): void -> { ... } how it's processing it
 
