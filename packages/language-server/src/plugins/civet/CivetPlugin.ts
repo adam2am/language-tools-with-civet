@@ -18,6 +18,7 @@ import {
     WorkspaceEdit
 } from 'vscode-languageserver';
 import { CivetHoverProvider } from './features/CivetHoverProvider';
+import { LSAndTSDocResolver } from '../typescript/LSAndTSDocResolver';
 // Import other feature providers here as they are created
 // import { CivetDiagnosticsProvider } from './features/CivetDiagnosticsProvider';
 
@@ -32,8 +33,8 @@ export class CivetPlugin implements
     private hoverProvider: CivetHoverProvider;
     // private diagnosticsProvider: CivetDiagnosticsProvider;
 
-    constructor(private configManager: LSConfigManager) {
-        this.hoverProvider = new CivetHoverProvider();
+    constructor(private configManager: LSConfigManager, private lsAndTsDocResolver: LSAndTSDocResolver) {
+        this.hoverProvider = new CivetHoverProvider(this.lsAndTsDocResolver);
         // this.diagnosticsProvider = new CivetDiagnosticsProvider(configManager, ...any other deps);
     }
 

@@ -210,6 +210,16 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
             });
             const tsSnippet = civetResult.code;
             let civetMap = civetResult.map;
+
+            Logger.debug('[Civet preprocessSvelteFile - Civet Branch]', {
+                file: document.getFilePath(),
+                originalContentLength: scriptInfo.content?.length,
+                tsSnippetLength: tsSnippet.length,
+                hasCivetMap: !!civetMap,
+                mapSources: civetMap?.sources,
+                mapFile: civetMap?.file,
+            });
+
             // Build mapper from TS snippet back to Civet
             if (civetMap) {
                 preprocessorMapper = new SourceMapDocumentMapper(
@@ -245,7 +255,7 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
         scriptInfo?.attributes.lang === 'civet' ? ts.ScriptKind.TS : autoScriptKind;
 
     try {
-        const tsx = svelte2tsx(text, {
+        const svelte2tsxResult = svelte2tsx(text, {
             parse: options.parse,
             version: options.version,
             filename: document.getFilePath() ?? undefined,
@@ -258,16 +268,20 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
                 document.config?.compilerOptions?.accessors ??
                 document.config?.compilerOptions?.customElement
         });
-        text = tsx.code;
-        tsxMap = tsx.map as EncodedSourceMap;
-        exportedNames = tsx.exportedNames;
+        text = svelte2tsxResult.code;
+        tsxMap = svelte2tsxResult.map as EncodedSourceMap;
+        exportedNames = svelte2tsxResult.exportedNames;
         // We know it's there, it's not part of the public API so people don't start using it
-        htmlAst = (tsx as any).htmlAst;
+        htmlAst = (svelte2tsxResult as any).htmlAst;
 
-        console.log('==== svelte2tsx Output ====');
-        console.log('Code:\n', text);
-        console.log('Map:\n', JSON.stringify(tsxMap, null, 2));
-        console.log('==========================');
+        Logger.debug('[Civet preprocessSvelteFile - svelte2tsx Branch]', {
+            file: document.getFilePath(),
+            originalLength: document.getText().length,
+            generatedTsxLength: text.length,
+            hasTsxMap: !!tsxMap,
+            tsxMapSources: tsxMap?.sources,
+            tsxMapFile: tsxMap?.file,
+        });
 
         if (tsxMap) {
             tsxMap.sources = [document.uri];
@@ -461,17 +475,27 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
     }
 
     private initMapper() {
+        Logger.debug('[SvelteDocumentSnapshot.initMapper]', {
+            filePath: this.filePath,
+            hasPreprocessorMapper: !!this.preprocessorMapper,
+            hasTsxMap: !!this.tsxMap,
+            scriptLang: this.scriptInfo?.attributes.lang,
+        });
+
         const scriptInfo = this.parent.scriptInfo || this.parent.moduleScriptInfo;
         const parent = this.preprocessorMapper;
 
         // No TSX map: fallback to preprocessor map or fragment/identity
         if (!this.tsxMap) {
             if (parent) {
+                Logger.debug('[SvelteDocumentSnapshot.initMapper] No TSX map, returning preprocessorMapper');
                 return parent;
             }
             if (!scriptInfo) {
+                Logger.debug('[SvelteDocumentSnapshot.initMapper] No TSX map, no scriptInfo, returning IdentityMapper');
                 return new IdentityMapper(this.url);
             }
+            Logger.debug('[SvelteDocumentSnapshot.initMapper] No TSX map, returning FragmentMapper for scriptInfo');
             return new FragmentMapper(
                 this.parent.getText(),
                 scriptInfo,

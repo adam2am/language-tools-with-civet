@@ -25,6 +25,7 @@ import { not, flatten, passMap, swapRangeStartEndIfNecessary, memoize } from '..
 import { LSConfigManager } from '../../../ls-config';
 import { isAttributeName, isEventHandler } from '../svelte-ast-utils';
 import { internalHelpers } from 'svelte2tsx';
+import { Logger } from '../../../logger';
 
 export enum DiagnosticCode {
     MODIFIERS_CANNOT_APPEAR_HERE = 1184, // "Modifiers cannot appear here."
@@ -52,12 +53,12 @@ export enum DiagnosticCode {
 }
 
 // Filter only module import diagnostics for Civet script blocks
-function filterCivetDiagnostics(diagnostics: ts.Diagnostic[]): ts.Diagnostic[] {
-    return diagnostics.filter(diag =>
-        diag.code === 2307 || // Cannot find module 'X'
-        diag.code === 2306    // File 'X' is not a module
-    );
-}
+// function filterCivetDiagnostics(diagnostics: ts.Diagnostic[]): ts.Diagnostic[] {
+//     return diagnostics.filter(diag =>
+//         diag.code === 2307 || // Cannot find module 'X'
+//         diag.code === 2306    // File 'X' is not a module
+//     );
+// }
 
 export class DiagnosticsProviderImpl implements DiagnosticsProvider {
     constructor(
@@ -67,8 +68,7 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
 
     async getDiagnostics(
         document: Document,
-        cancellationToken?: CancellationToken,
-        isCivet?: boolean
+        cancellationToken?: CancellationToken
     ): Promise<Diagnostic[]> {
         const { lang, tsDoc } = await this.getLSAndTSDoc(document);
 
@@ -79,11 +79,14 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
             return [];
         }
 
+        const isCivetScript = document.getLanguageAttribute('script') === 'civet';
+
         const isTypescript =
             tsDoc.scriptKind === ts.ScriptKind.TSX || tsDoc.scriptKind === ts.ScriptKind.TS;
 
         // Document preprocessing failed, show parser error instead
         if (tsDoc.parserError) {
+            Logger.debug('[DiagnosticsProviderImpl] Parser error, returning that.', tsDoc.parserError);
             return [
                 {
                     range: tsDoc.parserError.range,
@@ -96,19 +99,21 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
         }
 
         let diagnostics: ts.Diagnostic[] = lang.getSyntacticDiagnostics(tsDoc.filePath);
+        Logger.debug('[DiagnosticsProviderImpl] Syntactic diagnostics (raw):', diagnostics.map(d => ({ file: d.file?.fileName, start: d.start, length: d.length, message: ts.flattenDiagnosticMessageText(d.messageText, '\n') })) );
+
         const checkers = [lang.getSuggestionDiagnostics, lang.getSemanticDiagnostics];
 
         for (const checker of checkers) {
             if (cancellationToken) {
-                // wait a bit so the event loop can check for cancellation
-                // or let completion go first
                 await new Promise((resolve) => setTimeout(resolve, 10));
                 if (cancellationToken.isCancellationRequested) {
+                    Logger.debug('[DiagnosticsProviderImpl] Cancellation requested during semantic checks.');
                     return [];
                 }
             }
             diagnostics.push(...checker.call(lang, tsDoc.filePath));
         }
+        Logger.debug('[DiagnosticsProviderImpl] All raw diagnostics (before Civet filter):', diagnostics.map(d => ({ file: d.file?.fileName, start: d.start, length: d.length, message: ts.flattenDiagnosticMessageText(d.messageText, '\n') })) );
 
         const additionalStoreDiagnostics: ts.Diagnostic[] = [];
         const notGenerated = isNotGenerated(tsDoc.getFullText());
@@ -149,16 +154,18 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
 
         diagnostics = resolveNoopsInReactiveStatements(lang, diagnostics);
 
-        // For Civet code, filter to only module import diagnostics
-        if (isCivet) {
-            diagnostics = filterCivetDiagnostics(diagnostics);
-        }
+        // Civet: do NOT filter diagnostics to module-import-only, preserve all errors
+        // if (isCivetScript && this.configManager.getConfig().civet.diagnostics.enable) {
+        //     Logger.debug('[DiagnosticsProviderImpl] Filtering diagnostics for Civet script.');
+        //     diagnostics = filterCivetDiagnostics(diagnostics);
+        // }
 
         const mapRange = rangeMapper(tsDoc, document, lang);
         const noFalsePositive = isNoFalsePositive(document, tsDoc);
         const converted: Diagnostic[] = [];
 
         for (const tsDiag of diagnostics) {
+            Logger.debug('[DiagnosticsProviderImpl] Processing raw TS diagnostic:', { start: tsDiag.start, length: tsDiag.length, message: ts.flattenDiagnosticMessageText(tsDiag.messageText, '\n') });
             let diagnostic: Diagnostic = {
                 range: convertRange(tsDoc, tsDiag),
                 severity: mapSeverity(tsDiag.category),
@@ -168,10 +175,12 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
                 tags: getDiagnosticTag(tsDiag)
             };
             diagnostic = mapRange(diagnostic);
+            Logger.debug('[DiagnosticsProviderImpl] Diagnostic after mapRange:', { range: diagnostic.range, message: diagnostic.message });
 
             moveBindingErrorMessage(tsDiag, tsDoc, diagnostic, document);
 
             if (!hasNoNegativeLines(diagnostic) || !noFalsePositive(diagnostic)) {
+                Logger.debug('[DiagnosticsProviderImpl] Skipping diagnostic due to negative lines or false positive filter:', { range: diagnostic.range, message: diagnostic.message });
                 continue;
             }
 

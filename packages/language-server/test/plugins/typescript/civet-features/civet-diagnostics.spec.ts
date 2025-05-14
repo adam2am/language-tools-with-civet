@@ -1,5 +1,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
+import { Logger } from '../../../../src/logger';
+Logger.setDebug(true);
 import ts from 'typescript';
 import { Document, DocumentManager } from '../../../../src/lib/documents';
 import { LSAndTSDocResolver } from '../../../../src/plugins/typescript/LSAndTSDocResolver';
@@ -42,8 +44,8 @@ describe('Civet Diagnostics Feature', () => {
     );
 
     // The diagnostic range should map back to the Civet code line/column
-    // 'const str := num.toUpperCase();' is on line 1, 'str' starts at column 6
-    assert.strictEqual(diag.range.start.line, 1);
-    assert.strictEqual(diag.range.start.character, 6);
+    // Now that we count the <script> tag on line 0, the 'str' error is on line 2
+    assert.strictEqual(diag.range.start.line, 2);
+    assert.strictEqual(diag.range.start.character, 11);
   });
 });

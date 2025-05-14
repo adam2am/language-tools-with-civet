@@ -10,11 +10,12 @@
         "./bin/server.js": "./bin/server.js"
     },
     "scripts": {
-        "test": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register \"test/**/*.test.ts\"",
+        "test": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register \"test/**/*.{test}.ts\"",
+        "test:chain": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register test/civet-chain.test.ts",
+        "test:civet": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register \"test/plugins/typescript/civet-features/**/*.spec.ts\"",
         "build": "tsc",
         "prepublishOnly": "npm run build",
-        "watch": "tsc -w",
-        "test:chain": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register test/civet-chain.test.ts"
+        "watch": "tsc -w"
     },
     "bin": {
         "svelteserver": "bin/server.js"

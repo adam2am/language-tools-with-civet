@@ -184,9 +184,21 @@ export function startServer(options?: LSOptions) {
                 !evt.initializationOptions?.dontFilterIncompleteCompletions,
             definitionLinkSupport: !!evt.capabilities.textDocument?.definition?.linkSupport
         });
+        // Prepare TypeScript document resolver for both TS and Civet providers
+        const normalizedWorkspaceUris = workspaceUris.map(normalizeUri);
+        const lsAndTSDocResolver = new LSAndTSDocResolver(docManager, normalizedWorkspaceUris, configManager, {
+            notifyExceedSizeLimit: notifyTsServiceExceedSizeLimit,
+            onProjectReloaded: refreshCrossFilesSemanticFeatures,
+            watch: true,
+            nonRecursiveWatchPattern,
+            watchDirectory: (patterns) => watchDirectory(patterns),
+            reportConfigError(diagnostic) {
+                connection?.sendDiagnostics(diagnostic);
+            }
+        });
         // Order of plugin registration matters for FirstNonNull, which affects for example hover info
         pluginHost.register((sveltePlugin = new SveltePlugin(configManager)));
-        pluginHost.register(new CivetPlugin(configManager));
+        pluginHost.register(new CivetPlugin(configManager, lsAndTSDocResolver));
         pluginHost.register(new HTMLPlugin(docManager, configManager));
 
         const cssLanguageServices = createLanguageServices({
@@ -197,20 +209,10 @@ export function startServer(options?: LSOptions) {
         pluginHost.register(
             new CSSPlugin(docManager, configManager, workspaceFolders, cssLanguageServices)
         );
-        const normalizedWorkspaceUris = workspaceUris.map(normalizeUri);
         pluginHost.register(
             new TypeScriptPlugin(
                 configManager,
-                new LSAndTSDocResolver(docManager, normalizedWorkspaceUris, configManager, {
-                    notifyExceedSizeLimit: notifyTsServiceExceedSizeLimit,
-                    onProjectReloaded: refreshCrossFilesSemanticFeatures,
-                    watch: true,
-                    nonRecursiveWatchPattern,
-                    watchDirectory: (patterns) => watchDirectory(patterns),
-                    reportConfigError(diagnostic) {
-                        connection?.sendDiagnostics(diagnostic);
-                    }
-                }),
+                lsAndTSDocResolver,
                 normalizedWorkspaceUris,
                 docManager
             )
