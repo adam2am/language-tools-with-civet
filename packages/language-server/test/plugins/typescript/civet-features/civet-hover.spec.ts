@@ -38,7 +38,7 @@ describe('Civet Hover Feature', () => {
   for (const fileName of fixtureFiles) {
     it(`provides hover info for Civet variable mapping back to ${fileName}`, async () => {
       const { provider, document } = setup(fileName);
-      // Hover on 'num' in the script content: line 1, character 1 (file-level)
+      // Hover on 'num' in the script content: line 1, character 1
       const hover = await provider.doHover(document, Position.create(1, 1));
       // Ensure hover is not null
       assert.ok(hover !== null, `Expected hover for fixture ${fileName} not to be null`);
@@ -54,5 +54,24 @@ describe('Civet Hover Feature', () => {
         end: { line: 1, character: 3 }
       });
     });
+
+    it(`provides hover info for Civet variable in markup back to ${fileName}`, async () => {
+      const { provider, document } = setup(fileName);
+      // Hover on 'str' in the markup content: line 6, character 6
+      const hover2 = await provider.doHover(document, Position.create(6, 6));
+      // Ensure hover is not null
+      assert.ok(hover2 !== null, `Expected hover for markup variable in ${fileName} not to be null`);
+      const actual2 = hover2!;
+      // Range should map back to the original Civet declaration (line 2)
+      assert.deepStrictEqual(actual2.range, {
+        start: { line: 2, character: 0 },
+        end: { line: 2, character: 3 }
+      });
+      // Contents should be a TS code block
+      assert.ok(
+        typeof actual2.contents === 'string' && actual2.contents.startsWith('```typescript'),
+        'Hover contents for markup should start with a TypeScript code block'
+      );
+  });
   }
 });

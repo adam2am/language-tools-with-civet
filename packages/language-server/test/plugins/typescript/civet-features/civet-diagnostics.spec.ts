@@ -5,9 +5,9 @@ Logger.setDebug(true);
 import ts from 'typescript';
 import { Document, DocumentManager } from '../../../../src/lib/documents';
 import { LSAndTSDocResolver } from '../../../../src/plugins/typescript/LSAndTSDocResolver';
-import { CivetDiagnosticsProvider } from '../../../../src/plugins/civet/features/CivetDiagnosticsProvider';
 import { LSConfigManager } from '../../../../src/ls-config';
 import { pathToUrl } from '../../../../src/utils';
+import { CivetDiagnosticsProvider } from '../../../../src/plugins/civet/features/CivetDiagnosticProvider';
 
 describe('Civet Diagnostics Feature', () => {
   const fixturesDir = path.join(__dirname, 'fixtures');

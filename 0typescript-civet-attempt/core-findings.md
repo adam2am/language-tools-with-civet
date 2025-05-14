@@ -14,7 +14,7 @@ This document summarizes the investigation into enabling source maps for Civet c
 
 **Next Milestones (Phase 2):**
 1. Refactor `CivetHoverProvider` and implement `CivetDiagnosticsProvider` to leverage the existing `LSAndTSDocResolver` and canonical TypeScript service.
-2. Update `preprocessSvelteFile` in `DocumentSnapshot.ts` to inject the Civet→TS snippet into the full Svelte file (tagged as TS) and then run `svelte2tsx`, preserving both template and script.
+2. ✔️ Update `preprocessSvelteFile` in `DocumentSnapshot.ts` to inject the Civet→TS snippet into the full Svelte file (tagged as TS) and then run `svelte2tsx`, preserving both template and script. Completed template-context integration.
 3. Create `packages/language-server/src/plugins/civet/features/CivetDiagnosticsProvider.ts` and integrate it into `CivetPlugin.ts`.
 4. Fix and expand `civet-diagnostics.spec.ts` and `civet-hover.spec.ts`, validating diagnostics, hover, go-to-definition, and completions against the unified pipeline.
 5. Deprecate or fallback the direct Civet compile in `svelte2tsx` once the preprocessor path is robust.
@@ -33,6 +33,8 @@ This document summarizes the investigation into enabling source maps for Civet c
 *   `ConsumerDocumentMapper` now accepts an optional parent mapper, and `nrPrependedLines` is set to 0 to align lines correctly.
 *   All original plain-Svelte tests still pass unchanged, since chaining only activates when a preprocessor map is provided.
 *   The dedicated `civet-chain.test.ts` confirms mapping behavior without affecting existing workflows.
+*   Template-bound variables in Civet scripts are now correctly recognized in the markup, eliminating false "unused variable" diagnostics in the script when variables are used in the template.
+*   Edge-case: hovering variables in markup (outside the `<script>`) still throws a `line must be greater than 0` error, indicating the preprocessor mapper should be bypassed for generatedPosition on markup nodes.
 
 # History-log:
 

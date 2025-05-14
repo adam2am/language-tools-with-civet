@@ -227,17 +227,17 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
                     urlToPath(document.uri)!
                 );
             }
-            // Return TS-only snapshot, skipping svelte2tsx
-            return {
-                tsxMap: undefined,
-                text: tsSnippet,
-                exportedNames,
-                htmlAst: undefined,
-                parserError,
-                nrPrependedLines: 0,
-                scriptKind: ts.ScriptKind.TS,
-                preprocessorMapper
-            };
+
+            // Inject TS snippet into the full Svelte document for svelte2tsx
+            const original = text;
+            text =
+                original.substring(0, scriptInfo.container.start) +
+                `<script lang=\"ts\">` +
+                tsSnippet +
+                `</script>` +
+                original.substring(scriptInfo.container.end);
+
+            // continue to svelte2tsx branch instead of returning early
         } catch (e) {
             console.error('Error running Civet preprocessor in TS plugin:', e);
         }

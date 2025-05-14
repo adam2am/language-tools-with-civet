@@ -31,22 +31,55 @@ export class CivetHoverProvider implements HoverProvider {
             Logger.debug('[CivetHoverProvider.doHover] No QuickInfo at position.');
             return null;
         }
+        // Determine if hover is in markup (outside the civet <script> block)
+        const rawOffsetOriginal = document.offsetAt(position);
+        const scriptInfo = document.scriptInfo || document.moduleScriptInfo;
+        if (scriptInfo && (rawOffsetOriginal < scriptInfo.container.start || rawOffsetOriginal > scriptInfo.container.end)) {
+            // Hovering in template/markup; map hover to the Civet declaration using definitions
+            const definitions = lang.getDefinitionAtPosition(tsDoc.filePath, offset);
+            if (definitions && definitions.length) {
+                const def = definitions[0];
+                Logger.debug('[CivetHoverProvider.doHover] Raw definition from TS:', {
+                    fileName: def.fileName,
+                    textSpan: def.textSpan
+                });
+                const defGeneratedRange = convertRange(tsDoc, def.textSpan);
+                Logger.debug('[CivetHoverProvider.doHover] Generated (TSX) definition range:', defGeneratedRange);
+                const hoverInfoForMapping = { range: defGeneratedRange, contents: [] as any };
+                // reuse contents from QuickInfo
+                hoverInfoForMapping.contents = ['```typescript', ts.displayPartsToString(info.displayParts), '```']
+                    .concat(getMarkdownDocumentation(info.documentation, info.tags) ? ['---', getMarkdownDocumentation(info.documentation, info.tags)!] : [])
+                    .join('\n');
+                Logger.debug('[CivetHoverProvider.doHover] Object to be mapped to original (definition):', hoverInfoForMapping);
+                const mappedHoverDef = mapObjWithRangeToOriginal(tsDoc, hoverInfoForMapping);
+                Logger.debug('[CivetHoverProvider.doHover] Mapped hover (definition):', mappedHoverDef);
+                return mappedHoverDef;
+            }
+        }
+        Logger.debug('[CivetHoverProvider.doHover] Raw QuickInfo from TS:', {
+            textSpan: info.textSpan,
+            displayParts: info.displayParts,
+        });
+
         const declaration = ts.displayPartsToString(info.displayParts);
         const documentation = getMarkdownDocumentation(info.documentation, info.tags);
         const contents = ['```typescript', declaration, '```']
             .concat(documentation ? ['---', documentation] : [])
             .join('\n');
 
-        const mappedHover = mapObjWithRangeToOriginal(tsDoc, {
-            range: convertRange(tsDoc, info.textSpan),
+        const generatedRange = convertRange(tsDoc, info.textSpan);
+        Logger.debug('[CivetHoverProvider.doHover] Generated (TSX) range:', generatedRange);
+
+        const hoverInfoForMapping = {
+            range: generatedRange,
             contents
-        });
+        };
+        Logger.debug('[CivetHoverProvider.doHover] Object to be mapped to original:', hoverInfoForMapping);
+
+        const mappedHover = mapObjWithRangeToOriginal(tsDoc, hoverInfoForMapping);
 
         Logger.debug('[CivetHoverProvider.doHover] Mapped hover:', mappedHover);
 
-        return mapObjWithRangeToOriginal(tsDoc, {
-            range: convertRange(tsDoc, info.textSpan),
-            contents
-        });
+        return mappedHover;
     }
 } 

@@ -178,6 +178,13 @@ Provide a seamless development experience for Civet in Svelte components, includ
             3. [ ] Write integration tests in `packages/language-server/test/` to verify hover, definition, and diagnostics for Civet code.
             4. [ ] Confirm that language features correctly map back to the original Civet source positions.
 
+### Progress Update: Full Civet Pipeline Integration
+
+- [X] Updated `preprocessSvelteFile` to inject the Civet-to-TS snippet into the full Svelte document and continue through `svelte2tsx`, preserving both script and template contexts.
+- [X] Confirmed that variables declared in `<script lang="civet">` and used in the markup (e.g., `{ line2 }`) are now recognized by the TypeScript service and no longer trigger false "unused variable" diagnostics.
+- [ ] Known edge-case: hovering variables in markup (outside the `<script>`) still errors with `line must be greater than 0`; need to adjust mapping logic to skip preprocessor map for markup.
+- [ ] Next: Implement a `CivetCodeActionsProvider` to map code fixes back through the source map chain.
+
 ### Phase 2: Integrate Civet Features into the Main Svelte/TS Pipeline
 
 - [X] Micro Task 2.1: Refactor CivetHoverProvider (and upcoming CivetDiagnosticsProvider) to use the existing LSAndTSDocResolver
