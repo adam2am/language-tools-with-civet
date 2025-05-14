@@ -44,11 +44,34 @@ This document summarizes the investigation into enabling source maps for Civet c
 *   The dedicated `civet-chain.test.ts` confirms mapping behavior without affecting existing workflows.
 
 ## Read-only milestones bellow after being written (freshest=up, historically=down):
+[9]
+Looking at civet-diagnostics.spec.ts, the key part is how DocumentManager and LSAndTSDocResolver are set up. These components handle the preprocessing implicitly when a Svelte document with a Civet script tag is opened or processed.
+
+
+[8]
+I’m looking into diagnostic tests that check for the presence of a tsDiag code for toUpperCase. It seems the TypeScript service might not be properly reporting an error when toUpperCase is called on a number, which isn’t valid. This is because the code is in an async arrow function, and the service might not flag it as used. If it sees the function as returning nothing, it might ignore those errors, even when there’s an attempted call on a number type.
+|
+It looks like doDiagnostics isn’t affecting getDiagnostics. The diagnostics mapping occurs after calling provider.getDiagnostics, but exceptions may not be thrown unless mapping fails. If the getOriginalPosition mapping has issues, it could cause errors in the mapping chain. Yet, getDiagnostics might still return a non-zero diagnostics length, although the tests are failing at the assertion that checks this. It seems the tests don’t log hover errors since the diagnostics test failure interrupts the process. Both tests are showing as failing, which adds complexity to the debugging.
+
+
+[7]
+I'm thinking about the preprocessorMapper and its role in the getGeneratedPosition property of snapshots. Maybe it's not really needed after all. For diagnostics mapping and hover mapping, we mainly focus on the getOriginalPosition (from TSX to TS to Civet) and getGeneratedPosition (from Civet to TS to TSX). 
+    => So, the resolution would be to adjust the ConsumerDocumentMapper.getOriginalPosition in the plugin to change the mapping order. Instead of the default, I should call mapping via this.traceMap first, then parent
+|
+Also not using full preprocessor, but transformers because otherwise it's gonna be async = which is fucking up the entire pipeline.
+
+    I’ve made two fixes:
+- In DocumentMapper.ts, I reversed the original‐position mapping so it first unwinds the Svelte→TSX map, then the Civet→TS map. I also wired up originalPositionFor and stored the parent mapper so the chain is now truly TSX→TS→Civet.
+|
+- In DocumentSnapshot.ts’s preprocess step, if we see lang="civet" we now return right after the Civet transformer (with its TS snippet and source map) and skip the full svelte2tsx pass. That way we drive diagnostics and hover directly against the TS snippet (where the type‐error and hover info live) and map back via the preprocessor map.
+
+
 [6]
 ### Verified: End-to-End Source Map Chaining with `testChainSourceMap.mjs`
 *   **Context:** After implementing robust source map chaining, we wrote `packages/language-server/test/testChainSourceMap.mjs` to validate the chain.
 *   **Test:** Compiled the snippet `foo := "bar";` using the preprocessor and `svelte2tsx`, then leveraged `@jridgewell/trace-mapping` to map a reference of `foo` back through TSX → TS → Civet.
 *   **Outcome:** Successful mapping from TSX (line 2, column 6) to TS (line 1, column 24) and finally to Civet (line 1, column 12), confirming end-to-end source map chaining.
+
 
 [5]
 I'm noticing that the preprocessSvelteFile function currently only uses svelte2tsx without leveraging any of the svelte preprocessors, which seems like a crucial step. It attempts to preprocess a Svelte document to convert it into analyzable content, but it lacks the integration with SvelteDocument or svelte-preprocess. This means the TS plugin pipeline doesn't utilize user-defined preprocessors, which limits its functionality. To make it work, the function should call either SvelteDocument.getTranspiled or 

@@ -6,6 +6,7 @@ import { ConsumerDocumentMapper } from '../src/plugins/typescript/DocumentMapper
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { internalHelpers, svelte2tsx } from 'svelte2tsx';
 import ts from 'typescript';
+import { dirname, resolve } from 'path';
 
 const JSOrTSDocumentSnapshot = ActualJSOrTSDocumentSnapshot;
 
@@ -24,23 +25,21 @@ async function createChainTestSnapshot(civetCode: string, svelteFileContent: str
         typingsNamespace: 'svelteHTML'
     };
 
-    const { sveltePreprocess } = require('svelte-preprocess-with-civet');
-    const svelteProcessorInstance = sveltePreprocess({
-        civet: { sourceMap: true }
-    });
-
-    const preprocessorResult = await svelteProcessorInstance.script({
+    // Use synchronous transformer from svelte-preprocess-with-civet
+    const civetPkgIndex = require.resolve('svelte-preprocess-with-civet');
+    const civetPkgDir = dirname(civetPkgIndex);
+    const { transformer: civetTransformer } = require(resolve(civetPkgDir, 'transformers', 'civet.js'));
+    const civetResult = civetTransformer({
         content: civetCode,
         filename: 'test.svelte',
+        options: { sourceMap: true },
         attributes: { lang: 'civet' }
     });
-
-    if (!preprocessorResult) {
+    if (!civetResult) {
         throw new Error('Civet preprocessing did not return a result.');
     }
-
-    const civetToTsMapObject = preprocessorResult.map;
-    const tsCodeFromCivetPreprocessor = preprocessorResult.code;
+    const civetToTsMapObject = civetResult.map;
+    const tsCodeFromCivetPreprocessor = civetResult.code;
 
     console.log('---- Civet to TS output (tsCodeFromCivetPreprocessor) ----');
     console.log(tsCodeFromCivetPreprocessor);
