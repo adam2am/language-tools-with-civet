@@ -29,7 +29,7 @@ export class CivetCodeActionsProvider implements CodeActionsProvider {
         context: CodeActionContext
     ): Promise<CodeAction[]> {
         if (document.getLanguageAttribute('script') !== 'civet') {
-            return [];
+        return [];
         }
         return this.tsProvider.getCodeActions(document, range, context);
     }

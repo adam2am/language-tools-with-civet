@@ -22,6 +22,7 @@ import { CivetDiagnosticsProvider } from './features/CivetDiagnosticProvider';
 import { CivetCompletionsProvider } from './features/CivetCompletionsProvider';
 import { CivetCodeActionsProvider } from './features/CivetCodeActionsProvider';
 import { LSAndTSDocResolver } from '../typescript/LSAndTSDocResolver';
+import { SelectionRangeProviderImpl } from '../typescript/features/SelectionRangeProvider';
 // import { CivetCodeActionsProvider } from './features/CivetDiagnosticsProvider';
 // Import other feature providers here as they are created
 
@@ -38,12 +39,14 @@ export class CivetPlugin implements
     private diagnosticsProvider: CivetDiagnosticsProvider;
     private completionsProvider: CivetCompletionsProvider;
     private codeActionsProvider: CivetCodeActionsProvider;
+    private selectionRangeProvider: SelectionRangeProviderImpl;
 
-    constructor(private configManager: LSConfigManager, private lsAndTsDocResolver: LSAndTSDocResolver) {
-        this.hoverProvider = new CivetHoverProvider(this.lsAndTsDocResolver);
-        this.diagnosticsProvider = new CivetDiagnosticsProvider(this.lsAndTsDocResolver, this.configManager);
-        this.completionsProvider = new CivetCompletionsProvider(this.lsAndTsDocResolver, this.configManager);
-        this.codeActionsProvider = new CivetCodeActionsProvider(this.lsAndTsDocResolver, this.configManager);
+    constructor(private configManager: LSConfigManager, private lsAndTSDocResolver: LSAndTSDocResolver) {
+        this.hoverProvider = new CivetHoverProvider(this.lsAndTSDocResolver);
+        this.diagnosticsProvider = new CivetDiagnosticsProvider(this.lsAndTSDocResolver, this.configManager);
+        this.completionsProvider = new CivetCompletionsProvider(this.lsAndTSDocResolver, this.configManager);
+        this.codeActionsProvider = new CivetCodeActionsProvider(this.lsAndTSDocResolver, this.configManager);
+        this.selectionRangeProvider = new SelectionRangeProviderImpl(this.lsAndTSDocResolver);
     }
 
     async getDiagnostics(document: Document): Promise<Diagnostic[]> {
@@ -91,9 +94,14 @@ export class CivetPlugin implements
         if (document.getLanguageAttribute('script') !== 'civet') {
             return null;
         }
-        // TODO: Delegate or handle Civet-specific commands
-        console.warn('CivetPlugin.executeCommand not yet implemented. Returning null.');
-        return null;
+        // Delegate to TS code-actions executeCommand
+        const res = this.codeActionsProvider.executeCommand
+            ? await this.codeActionsProvider.executeCommand(document, command, _args)
+            : null;
+        if (res == null) {
+            console.warn(`Needed implemetation for CivetPlugin.executeCommand: no result for command ${command}`);
+        }
+        return res;
     }
 
     async getSelectionRange(
@@ -103,8 +111,11 @@ export class CivetPlugin implements
         if (document.getLanguageAttribute('script') !== 'civet') {
             return null;
         }
-        // TODO: Delegate to CivetSelectionRangeProvider
-        console.warn('CivetSelectionRangeProvider not yet implemented. Returning null.');
-        return null;
+        // Delegate to TS selection-range provider
+        const res = await this.selectionRangeProvider.getSelectionRange(document, position);
+        if (res == null) {
+            console.warn(`Needed implemetation for CivetPlugin.getSelectionRange: no range for position ${position.line},${position.character}`);
+        }
+        return res;
     }
 } 

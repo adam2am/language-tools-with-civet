@@ -511,6 +511,13 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
             parent
         );
     }
+
+    /**
+     * Expose the processor source map mapper (Civet→TS) to allow bypassing the TSX map.
+     */
+    public getPreprocessorMapper(): DocumentMapper | undefined {
+        return this.preprocessorMapper;
+    }
 }
 
 /**

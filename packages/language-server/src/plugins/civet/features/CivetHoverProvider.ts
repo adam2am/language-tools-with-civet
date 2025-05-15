@@ -6,6 +6,7 @@ import { LSAndTSDocResolver } from '../../typescript/LSAndTSDocResolver';
 import { getMarkdownDocumentation } from '../../typescript/previewer';
 import { convertRange } from '../../typescript/utils';
 import { Logger } from '../../../logger';
+import { DocumentMapper } from '../../../lib/documents';
 
 export class CivetHoverProvider implements HoverProvider {
     constructor(private readonly lsAndTSDocResolver: LSAndTSDocResolver) { }
@@ -31,6 +32,7 @@ export class CivetHoverProvider implements HoverProvider {
             Logger.debug('[CivetHoverProvider.doHover] No QuickInfo at position.');
             return null;
         }
+
         // Determine if hover is in markup (outside the civet <script> block)
         const rawOffsetOriginal = document.offsetAt(position);
         const scriptInfo = document.scriptInfo || document.moduleScriptInfo;
@@ -56,30 +58,22 @@ export class CivetHoverProvider implements HoverProvider {
                 return mappedHoverDef;
             }
         }
+        // Unified hover mapping for script-only and fallback QuickInfo
         Logger.debug('[CivetHoverProvider.doHover] Raw QuickInfo from TS:', {
             textSpan: info.textSpan,
             displayParts: info.displayParts,
         });
-
         const declaration = ts.displayPartsToString(info.displayParts);
         const documentation = getMarkdownDocumentation(info.documentation, info.tags);
         const contents = ['```typescript', declaration, '```']
             .concat(documentation ? ['---', documentation] : [])
             .join('\n');
-
         const generatedRange = convertRange(tsDoc, info.textSpan);
         Logger.debug('[CivetHoverProvider.doHover] Generated (TSX) range:', generatedRange);
-
-        const hoverInfoForMapping = {
-            range: generatedRange,
-            contents
-        };
+        const hoverInfoForMapping = { range: generatedRange, contents };
         Logger.debug('[CivetHoverProvider.doHover] Object to be mapped to original:', hoverInfoForMapping);
-
         const mappedHover = mapObjWithRangeToOriginal(tsDoc, hoverInfoForMapping);
-
         Logger.debug('[CivetHoverProvider.doHover] Mapped hover:', mappedHover);
-
         return mappedHover;
     }
 } 

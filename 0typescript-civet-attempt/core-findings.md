@@ -91,6 +91,76 @@ This document summarizes the investigation into enabling source maps for Civet c
 # History-log:
 
 ## Read-only milestones bellow after being written (freshest=up, historically=down):
+[20] - Completed Phase 3 & Phase 4: hover, completions, go-to-definition, code-actions, and diagnostics now all working end-to-end via the chained TSX→TS→Civet mapping; remaining work: de-duplicate diagnostics and disable TSX fallback compile in svelte2tsx.
+
+[19]
+Currently, `CivetHoverProvider.doHover` works like this:
+1.  **Language‐check**  It only runs for `<script lang="civet">` blocks (skips everything else).
+2.  **Snapshot + Mapping Setup**  
+    It calls `LSAndTSDocResolver.getLSAndTSDoc(document)`, which under the covers does:  
+    • Run the Civet preprocessor → TypeScript snippet + V3 map (`preprocessorMapper`).  
+    • Inject that snippet into your Svelte source (changing `lang="civet"`→`lang="ts"`) and call `svelte2tsx` → TSX + V3 map (`tsxMap`).  
+    • Chain the two maps into a single `ConsumerDocumentMapper` that knows how to go from TSX ↔ Civet.
+3.  **Generate Position**  
+    It asks the snapshot (`tsDoc`) to translate your original `.svelte` cursor `position` into a "generated" position in the TSX file:
+    ```ts
+    const generatedPosition = tsDoc.getGeneratedPosition(position);
+    const offset = tsDoc.offsetAt(generatedPosition);
+    ```
+4.  **QuickInfo Lookup**  
+    It calls the TypeScript service on that TSX file:
+    ```ts
+    const info = lang.getQuickInfoAtPosition(tsDoc.filePath, offset);
+    if (!info || !info.textSpan) return null;  // no hover
+    ```
+5.  **Script vs. Template**  
+    - If original cursor was *outside* the script container (in the template), it does a `getDefinitionAtPosition` + manually maps that definition's TSX range back to Civet, and returns a hover there.  
+    - Otherwise (inside the script), it takes the QuickInfo's `displayParts` + docs, computes the TSX `Range` via `convertRange`, and then calls `mapObjWithRangeToOriginal(tsDoc, { range, contents })`. That walks the chained source maps (TSX→TS→Civet) to recover the original Civet location.
+
+
+**It's Hacky**  
+Because we:
+- Special‐case the template hover via definitions,  
+- Then rely on the two‐stage map chain which isn't "aware" of the Civet snippet's exact bounds,  
+- And still lose pure‐script hovers.
+
+**Our Phase 4 Proposal ("Fix the TSX Map Chain")**  
+Instead of special‐casing in the hover provider, we teach the map‐chain itself to know "if your generated position lies within the injected TS snippet region, *skip* the TSX→Svelte mapping step and go straight to the parent (Civet→TS) map." Concretely:
+
+1.  **Augment `ConsumerDocumentMapper`**  
+    - Accept the script‐region's start/end (in TSX coordinates) in its constructor.  
+    - In `getOriginalPosition(generatedPosition)`, if `generatedPosition` is inside that snippet region, do:
+      ```ts
+      // Short‐circuit: map only via parent (Civet→TS)
+      return this.parentMapper!.getOriginalPosition(generatedPosition);
+      ```
+      Otherwise run the existing TSX→Civet chain.
+
+2.  **Pass Script Region**  
+    In `SvelteDocumentSnapshot.initMapper()`, when you build the `ConsumerDocumentMapper`, also hand it the TSX‐side bounds of your Civet snippet (you can compute them from `scriptInfo.container.start/end` plus the prepended lines from svelte2tsx).
+
+3.  **Simplify `CivetHoverProvider`**  
+    Once the mapper correctly handles script‐only offsets, you can delete the `if (markup) { …getDefinitionAtPosition… }` branch and always:
+
+    ```ts
+    const generatedPosition = tsDoc.getGeneratedPosition(position);
+    const offset = tsDoc.offsetAt(generatedPosition);
+    const info = lang.getQuickInfoAtPosition(tsDoc.filePath, offset);
+    if (!info) return null;
+
+    const generatedRange = convertRange(tsDoc, info.textSpan);
+    return mapObjWithRangeToOriginal(tsDoc, { range: generatedRange, contents: … });
+    ```
+4.  **Restore Dynamic Tests**  
+    Re-enable the loop over every `.svelte` in `fixtures/hover`. Now both `hover-script.svelte` and `hover-template.svelte` should return non-null hovers with the correct ranges.
+
+**Why This Is Better**  
+- It keeps all the mapping logic in one place (the `DocumentMapper`), rather than sprinkling hacks in the hover provider.  
+- Once fixed, *all* LSP features (hover, completions, diagnostics, definitions) will have consistent mapping for script‐only code.  
+- Avoid a special "if in template" code path in your provider.  
+- The hover provider becomes trivial and future‐proof.
+
+
 **[18] - End-to-end IDE integration verified with editor diagnostics and hover for Civet scripts.**
 - Red underlines appear in `<div>` and other markup when Civet variables are missing.
 - Hovering over variables in both script and template contexts now shows correct type information from Civet.

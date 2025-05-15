@@ -226,20 +226,8 @@ Provide a seamless development experience for Civet in Svelte components, includ
 
 #### Chunk A: New Language-Feature Providers & Compilation Fix
 
-1. [ ] - Implement `CivetCompletionsProvider`
-    - Relevant files:
-        - `packages/language-server/src/plugins/civet/features/CivetCompletionsProvider.ts` (new)
-        - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (hook up `getCompletions`)
-    - Context: Hook into the TypeScript service via `LSAndTSDocResolver` to offer completions for Civet-specific syntax (`:=`, `.=`) and map positions back through our source-map chain.
-    - Question: How should we call `service.getCompletionsAtPosition` and map the resulting entries via `ConsumerDocumentMapper` to produce correct LSP `CompletionList` ranges?
-
-2. [ ] - Implement `CivetCodeActionsProvider`
-    - Relevant files:
-        - `packages/language-server/src/plugins/civet/features/CivetCodeActionsProvider.ts` (new)
-        - `packages/language-server/src/plugins/civet/CivetPlugin.ts` (delegate `getCodeActions`)
-    - Context: Surface TypeScript code-fixes (e.g., import fixes, signature fixes) as LSP code actions within Civet blocks and remap edits back to the original Civet source.
-    - Question: Which subset of TS code-fix actions do we support first, and how do we wrap `getCodeFixesAtPosition` to produce an LSP `CodeAction[]` with correctly mapped edit ranges?
-
+1. [X] - Implement `CivetCompletionsProvider`
+2. [X] - Implement `CivetCodeActionsProvider`
 3. [ ] - Investigate & fix Civet→TS compilation of function expressions
 Possibly Output is treated as plain JavaScript.
     - Relevant files:
@@ -288,9 +276,19 @@ Possibly Output is treated as plain JavaScript.
     - Context: End-to-end tests covering completions, code actions, deduped diagnostics, preprocessor syntax errors, and absence of duplicate messages.
     - Question: Which minimal `.svelte` fixture files cover all scenarios, and how should we structure tests using `LSAndTSDocResolver` plus our chained mappers?
 
-### Phase 4: Enable Script-Only Hover Support via Map-Chain Short-Circuit
-
-- [ ] Micro Task 4.1: Extend `ConsumerDocumentMapper` to accept a script-only region (TSX generated range for the injected TS snippet) and bypass the TSX map for positions within that region by directly invoking the `parentMapper`.
-- [ ] Micro Task 4.2: Pass the `scriptInfo.container` start/end (adjusted for any prepended lines) from `SvelteDocumentSnapshot` into the `ConsumerDocumentMapper` constructor in `initMapper()`.
-- [ ] Micro Task 4.3: Update `civet-hover.spec.ts` to restore the dynamic `fs.readdirSync` loop and assert hover results for both `hover-script.svelte` and `hover-template.svelte`.
+### Phase 4: Enable Script-Only Hover via TSX-Map Short-Circuit (Chosen)
+**Selected Approach:** TSX-map short-circuit in `ConsumerDocumentMapper` (8/10) – immediate, LS-only change.  
+**Progress & Next Steps:**
+- [X] Micro Task 4.1: Extend `ConsumerDocumentMapper` to accept a script-only region and bypass the TSX map for positions within that region by directly invoking the preprocessor (parent) mapper. *(Done)*
+- [X] Micro Task 4.2: Pass `scriptInfo.container` start/end (adjusted for prepended lines) into the `ConsumerDocumentMapper` constructor in `initMapper()`. *(Done)*
+- [ ] Micro Task 4.3: Restore dynamic `fs.readdirSync` loop in `civet-hover.spec.ts` to assert hover for both `hover-script.svelte` and `hover-template.svelte`.
 - [ ] Micro Task 4.4: Remove the temporary single-test spec for markup-only hover in `civet-hover.spec.ts` once dynamic tests cover all cases.
+
+All of our core mapping is already centralized in ConsumerDocumentMapper and the map*ToOriginal helpers.
+    DocumentSnapshot.ts
+    private initMapperByRawSourceMap(input: string)
+        const map = tryParseRawSourceMap(input);
+
+> **Approach Detail (8/10):** When unwinding TSX→Svelte maps, detect if the generated position lies within the injected TS snippet boundaries and skip the TSX mapping, invoking the Civet-to-TS preprocessor map directly. Centralizes mapping logic across hover, diagnostics, completions, and code-actions.
+
+> **Deferred Alternative (9/10):** Upstream patch to special-case `<script lang="civet">` in `svelte2tsx`, wrapping only the compiled TS snippet into a TSX component and generating a single map. Pure and end-to-end but requires modifying and releasing `svelte2tsx` upstream. Too much
