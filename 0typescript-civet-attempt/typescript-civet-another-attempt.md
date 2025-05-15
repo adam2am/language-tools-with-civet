@@ -292,3 +292,76 @@ All of our core mapping is already centralized in ConsumerDocumentMapper and the
 > **Approach Detail (8/10):** When unwinding TSX→Svelte maps, detect if the generated position lies within the injected TS snippet boundaries and skip the TSX mapping, invoking the Civet-to-TS preprocessor map directly. Centralizes mapping logic across hover, diagnostics, completions, and code-actions.
 
 > **Deferred Alternative (9/10):** Upstream patch to special-case `<script lang="civet">` in `svelte2tsx`, wrapping only the compiled TS snippet into a TSX component and generating a single map. Pure and end-to-end but requires modifying and releasing `svelte2tsx` upstream. Too much
+
+### Phase 5: Investigate Implicit Arrow Function Body Without Braces
+
+**Context:** You observed that using an implicit Civet arrow function without braces:
+```civet
+increment1 := () ->
+    countCivet++
+    console.log "Count increased to #{countCivet}"
+```
+breaks syntax highlighting and hover behavior, whereas wrapping the body in braces works correctly:
+```civet
+increment1 := () -> {
+    countCivet++
+    console.log "Count increased to #{countCivet}"
+}
+```
+
+**Question:** Why does the shorthand (no-braces) Civet arrow function syntax disrupt the processing pipeline, and how can we fully support it?
+
+**Potential Approaches:**
+1. Inspect Civet's generated TS output for shorthand arrow functions to ensure it emits valid TypeScript/JavaScript.
+2. Verify the TypeScript transformer parses the resulting code—check for syntax errors or missing braces in the AST.
+3. Examine `svelte2tsx` parsing of script content: implicit block indentation may confuse its parser.
+4. Normalize shorthand arrow functions in the Civet transformer (wrap in `{}`) before feeding to TS stage.
+5. Adjust TextMate grammar rules (`civet.tmLanguage.json` / `svelte.tmLanguage.src.yaml`) to better handle implicit arrow function scopes.
+
+**Related Files:**
+- `src/transformers/civet.ts` (Civet→TS codegen)
+- `src/transformers/typescript.ts` (TS→JS transpilation)
+- `packages/svelte2tsx/src/svelte2tsx/index.ts` (TSX conversion & fallback Civet handling)
+- `packages/svelte-vscode/syntaxes/civet.tmLanguage.json` and `svelte.tmLanguage.src.yaml` (syntax highlighting)
+- `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts` and `ConsumerDocumentMapper` (source map chaining)
+
+## Appendix: Running the Civet Transformer + TypeScript Pipeline
+
+To execute the Civet transformer and then feed its TypeScript output into the TS transformer:
+
+1. Import and run the Civet transformer:
+   ```ts
+   import { transformer as civetTransformer } from 'svelte-preprocess-with-civet/src/transformers/civet';
+
+   const civetCode = `name := (): void -> { /* ... */ }`;
+   const civetResult = await civetTransformer({
+     content: civetCode,
+     filename: 'example.civet',
+     options: { js: false },
+     attributes: { lang: 'civet' },
+   });
+   // civetResult.code: TypeScript output
+   // civetResult.map: SourceMap (Civet→TS)
+   // civetResult.attributes.lang: 'ts'
+   ```
+2. Import and run the TypeScript transformer:
+   ```ts
+   import { transformer as tsTransformer } from 'svelte-preprocess-with-civet/src/transformers/typescript';
+
+   const tsResult = await tsTransformer({
+     content: civetResult.code,
+     filename: 'example.civet',
+     options: { /* your TS compilerOptions */ },
+     attributes: { lang: 'ts' },
+   });
+   // tsResult.code: JavaScript output
+   // tsResult.map: SourceMap (TS→JS)
+   ```
+3. Chain source maps by:
+   - Civet→TS (civetResult.map)  
+   - TS→JS (tsResult.map)
+
+4. Run the dedicated Vitest suite for the civet transformer:
+   ```bash
+   pnpm test test/transformers/civet.test.ts
+   ```
