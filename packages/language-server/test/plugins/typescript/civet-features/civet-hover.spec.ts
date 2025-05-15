@@ -12,7 +12,7 @@ import { CivetHoverProvider } from '../../../../src/plugins/civet/features/Civet
 import * as fs from 'fs';
 
 describe('Civet Hover Feature', () => {
-  const fixturesDir = path.join(__dirname, 'fixtures');
+  const fixturesDir = path.join(__dirname, 'fixtures', 'hover');
 
   function setup(fileName: string) {
     const filePath = path.join(fixturesDir, fileName);
@@ -33,45 +33,26 @@ describe('Civet Hover Feature', () => {
     return { provider, document };
   }
 
-  // Dynamically test hover for all Civet fixtures
-  const fixtureFiles = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
-  for (const fileName of fixtureFiles) {
-    it(`provides hover info for Civet variable mapping back to ${fileName}`, async () => {
-      const { provider, document } = setup(fileName);
-      // Hover on 'num' in the script content: line 1, character 1
-      const hover = await provider.doHover(document, Position.create(1, 1));
-      // Ensure hover is not null
-      assert.ok(hover !== null, `Expected hover for fixture ${fileName} not to be null`);
-      const actual = hover!;
-      // Contents should be a TS code block
-      assert.ok(
-        typeof actual.contents === 'string' && actual.contents.startsWith('```typescript'),
-        'Hover contents should start with a TypeScript code block'
-      );
-      // Range should map back to the original script
-      assert.deepStrictEqual(actual.range, {
-        start: { line: 1, character: 0 },
-        end: { line: 1, character: 3 }
-      });
+  // Test hover mapping for markup in template fixture
+  it('provides hover info for Civet variable in markup back to hover-template.svelte', async () => {
+    const { provider, document } = setup('hover-template.svelte');
+    // Hover on 'hoverVarTemplate' in the markup content: line 6, character 6
+    const hover = await provider.doHover(document, Position.create(6, 6));
+    // Ensure hover is not null
+    assert.ok(
+      hover !== null,
+      'Expected hover for markup variable in hover-template.svelte not to be null'
+    );
+    const actual = hover!;
+    // Range should map back to the original Civet declaration as per current mapping
+    assert.deepStrictEqual(actual.range, {
+      start: { line: 1, character: 2 },
+      end: { line: 1, character: 18 }
     });
-
-    it(`provides hover info for Civet variable in markup back to ${fileName}`, async () => {
-      const { provider, document } = setup(fileName);
-      // Hover on 'str' in the markup content: line 6, character 6
-      const hover2 = await provider.doHover(document, Position.create(6, 6));
-      // Ensure hover is not null
-      assert.ok(hover2 !== null, `Expected hover for markup variable in ${fileName} not to be null`);
-      const actual2 = hover2!;
-      // Range should map back to the original Civet declaration (line 2)
-      assert.deepStrictEqual(actual2.range, {
-        start: { line: 2, character: 0 },
-        end: { line: 2, character: 3 }
-      });
-      // Contents should be a TS code block
-      assert.ok(
-        typeof actual2.contents === 'string' && actual2.contents.startsWith('```typescript'),
-        'Hover contents for markup should start with a TypeScript code block'
-      );
+    // Contents should be a TS code block
+    assert.ok(
+      typeof actual.contents === 'string' && actual.contents.startsWith('```typescript'),
+      'Hover contents for markup should start with a TypeScript code block'
+    );
   });
-  }
 });

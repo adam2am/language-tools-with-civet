@@ -287,3 +287,10 @@ Possibly Output is treated as plain JavaScript.
         - `packages/language-server/test/plugins/typescript/features/civet-features/*`
     - Context: End-to-end tests covering completions, code actions, deduped diagnostics, preprocessor syntax errors, and absence of duplicate messages.
     - Question: Which minimal `.svelte` fixture files cover all scenarios, and how should we structure tests using `LSAndTSDocResolver` plus our chained mappers?
+
+### Phase 4: Enable Script-Only Hover Support via Map-Chain Short-Circuit
+
+- [ ] Micro Task 4.1: Extend `ConsumerDocumentMapper` to accept a script-only region (TSX generated range for the injected TS snippet) and bypass the TSX map for positions within that region by directly invoking the `parentMapper`.
+- [ ] Micro Task 4.2: Pass the `scriptInfo.container` start/end (adjusted for any prepended lines) from `SvelteDocumentSnapshot` into the `ConsumerDocumentMapper` constructor in `initMapper()`.
+- [ ] Micro Task 4.3: Update `civet-hover.spec.ts` to restore the dynamic `fs.readdirSync` loop and assert hover results for both `hover-script.svelte` and `hover-template.svelte`.
+- [ ] Micro Task 4.4: Remove the temporary single-test spec for markup-only hover in `civet-hover.spec.ts` once dynamic tests cover all cases.

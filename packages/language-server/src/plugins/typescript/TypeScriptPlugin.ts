@@ -224,8 +224,7 @@ export class TypeScriptPlugin
             return [];
         }
 
-        const isCivet = document.getLanguageAttribute('script') === 'civet';
-        return this.diagnosticsProvider.getDiagnostics(document, cancellationToken, isCivet);
+        return this.diagnosticsProvider.getDiagnostics(document, cancellationToken);
     }
 
     async doHover(document: Document, position: Position): Promise<Hover | null> {

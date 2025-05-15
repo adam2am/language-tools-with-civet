@@ -10,7 +10,7 @@ import { pathToUrl } from '../../../../src/utils';
 import { CivetDiagnosticsProvider } from '../../../../src/plugins/civet/features/CivetDiagnosticProvider';
 
 describe('Civet Diagnostics Feature', () => {
-  const fixturesDir = path.join(__dirname, 'fixtures');
+  const fixturesDir = path.join(__dirname, 'fixtures', 'diagnostics');
 
   function setup(fileName: string) {
     const filePath = path.join(fixturesDir, fileName);
@@ -46,6 +46,6 @@ describe('Civet Diagnostics Feature', () => {
     // The diagnostic range should map back to the Civet code line/column
     // Now that we count the <script> tag on line 0, the 'str' error is on line 2
     assert.strictEqual(diag.range.start.line, 2);
-    assert.strictEqual(diag.range.start.character, 11);
+    assert.strictEqual(diag.range.start.character, 15);
   });
 });

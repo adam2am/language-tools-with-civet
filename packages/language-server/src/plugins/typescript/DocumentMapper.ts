@@ -18,8 +18,8 @@ export class ConsumerDocumentMapper extends SourceMapDocumentMapper {
     getOriginalPosition(generatedPosition: Position): Position {
         // First adjust for any prepended lines
         const adjusted: Position = Position.create(
-            generatedPosition.line - this.nrPrependesLines,
-            generatedPosition.character
+                generatedPosition.line - this.nrPrependesLines,
+                generatedPosition.character
         );
         // Step 1: map from TSX -> Svelte original positions
         const tsxMapped = originalPositionFor(this.traceMap, {

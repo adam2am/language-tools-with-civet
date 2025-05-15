@@ -19,9 +19,12 @@ import {
 } from 'vscode-languageserver';
 import { CivetHoverProvider } from './features/CivetHoverProvider';
 import { CivetDiagnosticsProvider } from './features/CivetDiagnosticProvider';
+import { CivetCompletionsProvider } from './features/CivetCompletionsProvider';
+import { CivetCodeActionsProvider } from './features/CivetCodeActionsProvider';
 import { LSAndTSDocResolver } from '../typescript/LSAndTSDocResolver';
+// import { CivetCodeActionsProvider } from './features/CivetDiagnosticsProvider';
 // Import other feature providers here as they are created
-// import { CivetDiagnosticsProvider } from './features/CivetDiagnosticsProvider';
+
 
 export class CivetPlugin implements
     DiagnosticsProvider,
@@ -33,10 +36,14 @@ export class CivetPlugin implements
 
     private hoverProvider: CivetHoverProvider;
     private diagnosticsProvider: CivetDiagnosticsProvider;
+    private completionsProvider: CivetCompletionsProvider;
+    private codeActionsProvider: CivetCodeActionsProvider;
 
     constructor(private configManager: LSConfigManager, private lsAndTsDocResolver: LSAndTSDocResolver) {
         this.hoverProvider = new CivetHoverProvider(this.lsAndTsDocResolver);
         this.diagnosticsProvider = new CivetDiagnosticsProvider(this.lsAndTsDocResolver, this.configManager);
+        this.completionsProvider = new CivetCompletionsProvider(this.lsAndTsDocResolver, this.configManager);
+        this.codeActionsProvider = new CivetCodeActionsProvider(this.lsAndTsDocResolver, this.configManager);
     }
 
     async getDiagnostics(document: Document): Promise<Diagnostic[]> {
@@ -62,9 +69,7 @@ export class CivetPlugin implements
         if (document.getLanguageAttribute('script') !== 'civet') {
             return null;
         }
-        // TODO: Delegate to CivetCompletionsProvider
-        console.warn('CivetCompletionsProvider not yet implemented. Returning null.');
-        return null;
+        return this.completionsProvider.getCompletions(document, position);
     }
 
     async getCodeActions(
@@ -75,9 +80,7 @@ export class CivetPlugin implements
         if (document.getLanguageAttribute('script') !== 'civet') {
             return [];
         }
-        // TODO: Delegate to CivetCodeActionsProvider
-        console.warn('CivetCodeActionsProvider not yet implemented. Returning empty array.');
-        return [];
+        return this.codeActionsProvider.getCodeActions(document, range, context);
     }
 
     async executeCommand(
