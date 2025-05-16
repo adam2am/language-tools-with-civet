@@ -17,7 +17,8 @@ describe('Civet Definition Feature for Shorthand Arrows', () => {
     'arrow-params.svelte',
     'arrow-untyped.svelte',
     'arrow-generic.svelte',
-    'unbraced-function.svelte'
+    'unbraced-function.svelte',
+    'indent-arrow.svelte'
   ];
   testFiles.forEach((fileName) => {
     it(`resolves definition for symbols in ${fileName}`, async () => {
@@ -50,7 +51,7 @@ describe('Civet Definition Feature for Shorthand Arrows', () => {
       const generatedPosition = tsDoc.getGeneratedPosition(originalPosition);
       const offset = tsDoc.offsetAt(generatedPosition);
 
-      if (fileName === 'unbraced-function.svelte') {
+      if (fileName === 'unbraced-function.svelte' || fileName === 'indent-arrow.svelte') {
         // Temporarily cast to any to bypass TS error if type system hasn't caught up
         const rawPos = (tsDoc as any).getRawSvelte2TsxMappedPosition(originalPosition);
         if (rawPos) {

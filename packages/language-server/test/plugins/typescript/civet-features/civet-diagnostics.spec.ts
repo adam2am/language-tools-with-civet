@@ -67,4 +67,23 @@ describe('Civet Diagnostics Feature', () => {
       'Diagnostic character must be > 0'
     );
   });
+
+  it('reports TypeScript errors for indent-arrow call with wrong type', async () => {
+    const { provider, document } = setup('indent-arrow.svelte');
+    const diagnostics = await provider.getDiagnostics(document);
+    assert.ok(diagnostics.length > 0, 'Should have at least one diagnostic for indent-arrow function');
+    const diag = diagnostics[0];
+
+    // The error should mention assignment to wrong parameter type
+    assert.ok(
+      diag.message.includes('not assignable'),
+      `Unexpected diagnostic message: ${diag.message}`
+    );
+    // The diagnostic range should map back to the function call line
+    assert.strictEqual(diag.range.start.line, 2);
+    assert.ok(
+      diag.range.start.character > 0,
+      'Diagnostic character must be > 0'
+    );
+  });
 });

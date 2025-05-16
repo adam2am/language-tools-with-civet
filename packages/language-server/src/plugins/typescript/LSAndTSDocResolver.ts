@@ -184,68 +184,87 @@ export class LSAndTSDocResolver {
                     if (program) {
                         const sourceFile = program.getSourceFile(fileName);
                         if (sourceFile) {
-                            const fullText = sourceFile.getFullText();
-                            const start = Math.max(0, position - 50);
-                            const snippet = fullText.substring(start, position + 50);
-                            Logger.debug('[TS Debug] Text around position:\n' + snippet);
-                            
-                            let node: ts.Node | undefined = sourceFile;
-                            // Simplified node finding logic
-                            sourceFile.forEachChild(function iterate(child) {
-                                if (child.pos <= position && position < child.end) {
-                                    node = child;
-                                    ts.forEachChild(child, iterate);
+                            Logger.debug('[TS Fallback] Initial getDefinitionAtPosition failed. Original position:', position);
+                            // Text-based fallback: scan the TSX line text for the next identifier and retry
+                            try {
+                                const loc = sourceFile.getLineAndCharacterOfPosition(position);
+                                const fullText = tsDoc.getFullText();
+                                const lines = fullText.split(/\r?\n/);
+                                const lineText = lines[loc.line] || '';
+                                const substr = lineText.slice(loc.character);
+                                const idMatch = /\b[A-Za-z_]\w*\b/.exec(substr);
+                                if (idMatch) {
+                                    const candidateOffset = position + idMatch.index;
+                                    Logger.debug('[TS TextFallback] Found text candidate', idMatch[0], 'at offset', candidateOffset);
+                                    const retry = origGetDef(fileName, candidateOffset);
+                                    Logger.debug('[TS TextFallback] Retry returned:', retry);
+                                    if (retry && retry.length > 0) {
+                                        return retry;
+                                    }
                                 }
-                            });
-
-                            if (node && node !== sourceFile) {
-                                Logger.debug('[TS Debug] Node kind:', ts.SyntaxKind[node.kind], 'text:', node.getText(sourceFile));
-                                const checker = program.getTypeChecker();
-                                const symbol = checker.getSymbolAtLocation(node);
-                                Logger.debug('[TS Debug] Symbol at node:', symbol?.getName(), symbol);
-                            } else if (node === sourceFile) {
-                                Logger.debug('[TS Debug] Could not find specific node at position', position, '; node is SourceFile.');
-                            } else {
-                                Logger.debug('[TS Debug] No node found at position', position);
+                            } catch (e) {
+                                Logger.error('[TS TextFallback] Error during text fallback:', e);
                             }
-                            // Fallback: if defs empty and node is not Identifier, try nearest identifier on same line
-                            if ((!defs || defs.length === 0) && node && node.kind !== ts.SyntaxKind.Identifier) {
-                                const lineStarts = sourceFile.getLineStarts();
-                                // find line number
-                                let lineNumber = lineStarts.findIndex((ls) => ls > position) - 1;
-                                if (lineNumber < 0) lineNumber = 0;
-                                const lineStartOff = lineStarts[lineNumber];
-                                const lineEndOff = lineStarts[lineNumber + 1] ?? fullText.length;
-                                const lineText = fullText.substring(lineStartOff, lineEndOff);
-                                const relativePos = position - lineStartOff;
-                                const identifierRegex = /[A-Za-z_$][A-Za-z0-9_$]*/g;
-                                let match: RegExpExecArray | null;
-                                let fallbackOffset: number | null = null;
-                                while ((match = identifierRegex.exec(lineText))) {
-                                    const start = match.index;
-                                    const end = start + match[0].length;
-                                    if (start <= relativePos && relativePos <= end) {
-                                        fallbackOffset = lineStartOff + start + Math.floor(match[0].length / 2);
-                                        break;
-                                    }
-                                    if (start > relativePos) {
-                                        fallbackOffset = lineStartOff + start + Math.floor(match[0].length / 2);
-                                        break;
-                                    }
+                            // AST-based fallback: find nearest identifier in AST scope
+                            let nodeAtPosition: ts.Node | undefined = sourceFile;
+                            function findNodeAtPositionRecursive(node: ts.Node) {
+                                if (node.pos <= position && position < node.end) {
+                                    nodeAtPosition = node;
+                                    ts.forEachChild(node, findNodeAtPositionRecursive);
                                 }
-                                if (fallbackOffset !== null) {
-                                    Logger.debug('[TS Hack] retrying getDefinitionAtPosition at', fallbackOffset);
-                                    const retryDefs = origGetDef(fileName, fallbackOffset);
-                                    Logger.debug('[TS Hack] retry returned definitions:', retryDefs);
-                                    if (retryDefs && retryDefs.length > 0) {
-                                        return retryDefs;
+                            }
+                            findNodeAtPositionRecursive(sourceFile);
+                            if (nodeAtPosition && nodeAtPosition !== sourceFile) {
+                                Logger.debug('[TS Fallback] Node at original position:',
+                                    ts.SyntaxKind[nodeAtPosition.kind], 'text:', nodeAtPosition.getText(sourceFile).trim().substring(0, 30));
+                                if (nodeAtPosition.kind !== ts.SyntaxKind.Identifier) {
+                                    const { line: targetLine } = sourceFile.getLineAndCharacterOfPosition(position);
+                                    let bestCandidateNode: ts.Identifier | undefined;
+                                    let minDistanceAfterPosition = Infinity;
+                                    let searchScopeNode = nodeAtPosition.parent;
+                                    while (searchScopeNode && searchScopeNode.kind !== ts.SyntaxKind.Block && searchScopeNode.kind !== ts.SyntaxKind.SourceFile) {
+                                        searchScopeNode = searchScopeNode.parent!;
                                     }
+                                    searchScopeNode = searchScopeNode || sourceFile;
+                                    Logger.debug('[TS Fallback] AST Search Scope kind:', ts.SyntaxKind[searchScopeNode.kind]);
+                                    const identifiers: ts.Identifier[] = [];
+                                    function collectIdentifiers(node: ts.Node) {
+                                        if (ts.isIdentifier(node)) identifiers.push(node);
+                                        ts.forEachChild(node, collectIdentifiers);
+                                    }
+                                    collectIdentifiers(searchScopeNode);
+                                    const byLine = new Map<number, ts.Identifier[]>();
+                                    for (const id of identifiers) {
+                                        const start = id.getStart(sourceFile!);
+                                        const { line: idLine } = sourceFile!.getLineAndCharacterOfPosition(start);
+                                        if (!byLine.has(idLine)) byLine.set(idLine, []);
+                                        byLine.get(idLine)!.push(id);
+                                    }
+                                    const MAX_DELTA = 3;
+                                    for (let delta = 0; delta <= MAX_DELTA; delta++) {
+                                        const lineToCheck = targetLine + delta;
+                                        const lineIds = byLine.get(lineToCheck);
+                                        if (lineIds && lineIds.length > 0) {
+                                            let candidate = lineIds.find(id => id.parent?.kind === ts.SyntaxKind.ExpressionStatement && ['svelteHTML','createElement'].indexOf(id.getText(sourceFile!)) === -1);
+                                            if (!candidate) {
+                                                candidate = lineIds.find(id => ['svelteHTML','createElement'].indexOf(id.getText(sourceFile!)) === -1);
+                                            }
+                                            if (candidate) {
+                                                Logger.debug('[TS Fallback] Found candidate Identifier on line', lineToCheck, ':', candidate.getText(sourceFile!), 'at pos:', candidate.getStart(sourceFile!));
+                                                const retryDefs = origGetDef(fileName, candidate.getStart(sourceFile!));
+                                                Logger.debug('[TS Fallback] Retry with candidate returned:', retryDefs);
+                                                if (retryDefs && retryDefs.length > 0) return retryDefs;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Logger.debug('[TS Fallback] Could not find specific node at original position or node is SourceFile.');
                                 }
                             }
                         }
                     }
                 } catch (e) {
-                    Logger.error('[TS Debug] error introspecting AST at position', position, e);
+                    Logger.error('[TS Fallback] Error during fallback logic:', e);
                 }
             }
             return defs;

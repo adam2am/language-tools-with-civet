@@ -523,12 +523,28 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
             );
         }
 
-        // Chain TSX map (Map_B) on top of preprocessor map (Map_A)
+        // Compute TSX-space region for the injected Civet TS snippet
+        let snippetRegion: { start: Position; end: Position } | undefined;
+        if (scriptInfo && this.tsxMap) {
+            // Original script container offsets
+            const originalStart = scriptInfo.container.start;
+            const originalEnd = scriptInfo.container.end;
+            // Convert to Positions in the original document
+            const startPos = this.parent.positionAt(originalStart);
+            const endPos = this.parent.positionAt(originalEnd);
+            // Map those into the generated TSX
+            const tsxStart = this.getRawSvelte2TsxMappedPosition(startPos);
+            const tsxEnd = this.getRawSvelte2TsxMappedPosition(endPos);
+            if (tsxStart && tsxEnd) {
+                snippetRegion = { start: tsxStart, end: tsxEnd };
+            }
+        }
         return new ConsumerDocumentMapper(
             new TraceMap(this.tsxMap),
             this.url,
             this.nrPrependedLines,
-            parent
+            parent,
+            snippetRegion
         );
     }
 

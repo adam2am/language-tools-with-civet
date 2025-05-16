@@ -154,11 +154,13 @@ export class DiagnosticsProviderImpl implements DiagnosticsProvider {
 
         diagnostics = resolveNoopsInReactiveStatements(lang, diagnostics);
 
-        // Civet: do NOT filter diagnostics to module-import-only, preserve all errors
-        // if (isCivetScript && this.configManager.getConfig().civet.diagnostics.enable) {
-        //     Logger.debug('[DiagnosticsProviderImpl] Filtering diagnostics for Civet script.');
-        //     diagnostics = filterCivetDiagnostics(diagnostics);
-        // }
+        // Civet: filter out unused variable/import diagnostics so primary errors surface first
+        if (isCivetScript) {
+            Logger.debug('[DiagnosticsProviderImpl] Filtering out unused variable/import diagnostics for Civet script.');
+            diagnostics = diagnostics.filter(
+                d => d.code !== DiagnosticCode.NEVER_READ && d.code !== DiagnosticCode.ALL_IMPORTS_UNUSED
+            );
+        }
 
         const mapRange = rangeMapper(tsDoc, document, lang);
         const noFalsePositive = isNoFalsePositive(document, tsDoc);

@@ -5,14 +5,18 @@ import { SourceMapDocumentMapper, DocumentMapper } from '../../lib/documents';
 export class ConsumerDocumentMapper extends SourceMapDocumentMapper {
     // Keep a reference to parent mapper for custom chaining
     protected parentMapper?: DocumentMapper;
+    // Optional region in TSX space corresponding to the injected Civet TS snippet
+    private snippetRegion?: { start: Position; end: Position };
     constructor(
         traceMap: TraceMap,
         sourceUri: string,
         private nrPrependesLines: number,
-        parent?: DocumentMapper
+        parent?: DocumentMapper,
+        snippetRegion?: { start: Position; end: Position }
     ) {
         super(traceMap, sourceUri, parent);
         this.parentMapper = parent;
+        this.snippetRegion = snippetRegion;
     }
 
     getOriginalPosition(generatedPosition: Position): Position {
@@ -33,13 +37,20 @@ export class ConsumerDocumentMapper extends SourceMapDocumentMapper {
             line: (tsxMapped.line || 0) - 1,
             character: tsxMapped.column || 0
         };
-        // Step 2: only apply preprocessor (Civet) mapping if it yields a valid position
-        if (this.parentMapper) {
-            const parentMapped = this.parentMapper.getOriginalPosition(initialPos);
-            if (parentMapped.line >= 0 && parentMapped.character >= 0) {
-                return parentMapped;
+        // Region-aware: if the generatedPosition lies within the TS snippet region,
+        // always map through the Civet (preprocessor) mapper
+        if (this.snippetRegion && this.parentMapper) {
+            const { start, end } = this.snippetRegion;
+            if (
+                (generatedPosition.line > start.line ||
+                 (generatedPosition.line === start.line && generatedPosition.character >= start.character)) &&
+                (generatedPosition.line < end.line ||
+                 (generatedPosition.line === end.line && generatedPosition.character <= end.character))
+            ) {
+                return this.parentMapper.getOriginalPosition(initialPos);
             }
         }
+        // Outside the injected snippet region, return pure TSX→Svelte mapping
         return initialPos;
     }
 
