@@ -18,7 +18,7 @@ export class CivetHoverProvider implements HoverProvider {
         const { lang, tsDoc } = await this.lsAndTSDocResolver.getLSAndTSDoc(document);
 
         const generatedPosition = tsDoc.getGeneratedPosition(position);
-        const offset = tsDoc.offsetAt(tsDoc.getGeneratedPosition(position));
+        const offset = tsDoc.offsetAt(generatedPosition);
 
         Logger.debug('[CivetHoverProvider.doHover]', {
             originalPosition: position,
@@ -27,13 +27,7 @@ export class CivetHoverProvider implements HoverProvider {
             filePath: tsDoc.filePath,
         });
 
-        const info = lang.getQuickInfoAtPosition(tsDoc.filePath, offset);
-        if (!info || !info.textSpan) {
-            Logger.debug('[CivetHoverProvider.doHover] No QuickInfo at position.');
-            return null;
-        }
-
-        // Determine if hover is in markup (outside the civet <script> block)
+        // Determine if hover is in template/markup (outside the civet <script> block)
         const rawOffsetOriginal = document.offsetAt(position);
         const scriptInfo = document.scriptInfo || document.moduleScriptInfo;
         if (scriptInfo && (rawOffsetOriginal < scriptInfo.container.start || rawOffsetOriginal > scriptInfo.container.end)) {
@@ -45,35 +39,51 @@ export class CivetHoverProvider implements HoverProvider {
                     fileName: def.fileName,
                     textSpan: def.textSpan
                 });
-                const defGeneratedRange = convertRange(tsDoc, def.textSpan);
+                // Get hover info at definition location
+                const defOffset = def.textSpan.start;
+                const infoAtDef = lang.getQuickInfoAtPosition(tsDoc.filePath, defOffset);
+                if (!infoAtDef || !infoAtDef.textSpan) {
+                    Logger.debug('[CivetHoverProvider.doHover] No QuickInfo at definition location for template hover. Definition was:', def);
+                    return null;
+                }
+                const defGeneratedRange = convertRange(tsDoc, infoAtDef.textSpan);
                 Logger.debug('[CivetHoverProvider.doHover] Generated (TSX) definition range:', defGeneratedRange);
-                const hoverInfoForMapping = { range: defGeneratedRange, contents: [] as any };
-                // reuse contents from QuickInfo
-                hoverInfoForMapping.contents = ['```typescript', ts.displayPartsToString(info.displayParts), '```']
-                    .concat(getMarkdownDocumentation(info.documentation, info.tags) ? ['---', getMarkdownDocumentation(info.documentation, info.tags)!] : [])
+                const contents = ['```typescript', ts.displayPartsToString(infoAtDef.displayParts), '```']
+                    .concat(getMarkdownDocumentation(infoAtDef.documentation, infoAtDef.tags) ? ['---', getMarkdownDocumentation(infoAtDef.documentation, infoAtDef.tags)!] : [])
                     .join('\n');
+                const hoverInfoForMapping = { range: defGeneratedRange, contents };
                 Logger.debug('[CivetHoverProvider.doHover] Object to be mapped to original (definition):', hoverInfoForMapping);
                 const mappedHoverDef = mapObjWithRangeToOriginal(tsDoc, hoverInfoForMapping);
                 Logger.debug('[CivetHoverProvider.doHover] Mapped hover (definition):', mappedHoverDef);
                 return mappedHoverDef;
+            } else {
+                Logger.debug('[CivetHoverProvider.doHover] No definitions found by getDefinitionAtPosition for template hover at offset:', offset);
+                return null; // Explicitly return null if no definitions found
             }
         }
-        // Unified hover mapping for script-only and fallback QuickInfo
+        // Get QuickInfo for script positions and fallback
+        const info = lang.getQuickInfoAtPosition(tsDoc.filePath, offset);
+        if (!info || !info.textSpan) {
+            Logger.debug('[CivetHoverProvider.doHover] No QuickInfo at position.');
+            return null;
+        }
+
+        // Unified hover mapping for script-only positions
         Logger.debug('[CivetHoverProvider.doHover] Raw QuickInfo from TS:', {
             textSpan: info.textSpan,
             displayParts: info.displayParts,
         });
         const declaration = ts.displayPartsToString(info.displayParts);
         const documentation = getMarkdownDocumentation(info.documentation, info.tags);
-        const contents = ['```typescript', declaration, '```']
+        const contentsScript = ['```typescript', declaration, '```']
             .concat(documentation ? ['---', documentation] : [])
             .join('\n');
-        const generatedRange = convertRange(tsDoc, info.textSpan);
-        Logger.debug('[CivetHoverProvider.doHover] Generated (TSX) range:', generatedRange);
-        const hoverInfoForMapping = { range: generatedRange, contents };
-        Logger.debug('[CivetHoverProvider.doHover] Object to be mapped to original:', hoverInfoForMapping);
-        const mappedHover = mapObjWithRangeToOriginal(tsDoc, hoverInfoForMapping);
-        Logger.debug('[CivetHoverProvider.doHover] Mapped hover:', mappedHover);
-        return mappedHover;
+        const generatedRangeScript = convertRange(tsDoc, info.textSpan);
+        Logger.debug('[CivetHoverProvider.doHover] Generated (TSX) range:', generatedRangeScript);
+        const hoverInfoScript = { range: generatedRangeScript, contents: contentsScript };
+        Logger.debug('[CivetHoverProvider.doHover] Object to be mapped to original:', hoverInfoScript);
+        const mappedHoverScript = mapObjWithRangeToOriginal(tsDoc, hoverInfoScript);
+        Logger.debug('[CivetHoverProvider.doHover] Mapped hover:', mappedHoverScript);
+        return mappedHoverScript;
     }
 } 

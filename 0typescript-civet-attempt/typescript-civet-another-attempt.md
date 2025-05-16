@@ -293,37 +293,91 @@ All of our core mapping is already centralized in ConsumerDocumentMapper and the
 
 > **Deferred Alternative (9/10):** Upstream patch to special-case `<script lang="civet">` in `svelte2tsx`, wrapping only the compiled TS snippet into a TSX component and generating a single map. Pure and end-to-end but requires modifying and releasing `svelte2tsx` upstream. Too much
 
-### Phase 5: Investigate Implicit Arrow Function Body Without Braces
 
-**Context:** You observed that using an implicit Civet arrow function without braces:
+
+### Phase 5: Ensure Robust IDE Support for All Civet Arrow Function Syntaxes
+
+**Context:**
+User observations indicate that Civet arrow function without 
+braces:
 ```civet
 increment1 := () ->
     countCivet++
     console.log "Count increased to #{countCivet}"
 ```
-breaks syntax highlighting and hover behavior, whereas wrapping the body in braces works correctly:
+breaks syntax highlighting and hover behavior, whereas wrapping the body in 
+braces works correctly:
 ```civet
 increment1 := () -> {
     countCivet++
     console.log "Count increased to #{countCivet}"
 }
 ```
+1.  **IDE Misbehavior:** Syntax highlighting (TextMate) and language features (hover, go-to-definition) can be inaccurate when shorthand Civet arrow functions (e.g., `name := () -> ...` without braces and often without a clear newline break before subsequent code/markup) are present. This misbehavior is especially noticeable *outside* the `<script>` block, suggesting issues with TextMate scope termination or language server position mapping.
+2.  **Preprocessor Pipeline Interaction:**
+    *   Using the Civet preprocessor with its default `js: false` setting (outputting TypeScript and `lang="ts"`) requires a subsequent TypeScript preprocessor to convert the code to JavaScript for the Svelte compiler. If the TS preprocessor is missing, Svelte may error on valid Civet-generated TypeScript. (Verified by `test/processors/civet-shorthand-markup-expanded.test.ts`).
+    *   Setting `js: true` in the Civet preprocessor options would make it output JavaScript directly, which Svelte could consume without a TS preprocessor. However, this would sacrifice TypeScript's type information and the benefits it provides for static analysis and language server features. The primary goal remains a Civet -> TypeScript -> JavaScript pipeline for optimal DX.
 
-**Question:** Why does the shorthand (no-braces) Civet arrow function syntax disrupt the processing pipeline, and how can we fully support it?
+**Goal:** Ensure that both shorthand and braced Civet arrow functions provide a seamless experience regarding IDE features (highlighting, hover, definition) and integrate smoothly into the preferred Civet -> TypeScript -> JavaScript Svelte preprocessing pipeline.
 
-**Potential Approaches:**
-1. Inspect Civet's generated TS output for shorthand arrow functions to ensure it emits valid TypeScript/JavaScript.
-2. Verify the TypeScript transformer parses the resulting code—check for syntax errors or missing braces in the AST.
-3. Examine `svelte2tsx` parsing of script content: implicit block indentation may confuse its parser.
-4. Normalize shorthand arrow functions in the Civet transformer (wrap in `{}`) before feeding to TS stage.
-5. Adjust TextMate grammar rules (`civet.tmLanguage.json` / `svelte.tmLanguage.src.yaml`) to better handle implicit arrow function scopes.
+**Tasks:**
+- [X] **Verify Civet Compiler Output:**
+    - Confirmed `@danielx/civet` correctly transforms shorthand arrows into braced JavaScript functions (or equivalent TypeScript if `js:false`). (Covered by `test/transformers/civet-shorthand-arrow.test.ts`).
+- [X] **Verify Preprocessor Pipeline (Build-Time for Civet -> TS -> JS):**
+    - Confirmed that chaining Civet Preprocessor (Civet -> TS) with TypeScript Preprocessor (TS -> JS) allows Svelte to compile components with shorthand Civet arrows. (Covered by `test/processors/civet-shorthand-markup-expanded.test.ts`).
+- [X] **Investigate and Fix TextMate Grammar for Shorthand Arrows:**
+    - [X] Review `civet.tmLanguage.json` and its injection into `svelte.tmLanguage.src.yaml`.
+    - [X] Identify why shorthand arrow syntax (especially without clear newline breaks) might cause scope bleeding or incorrect tokenization affecting subsequent HTML markup.
+    - [X] Adjust grammar patterns to correctly define the scope and end of Civet script blocks under these conditions.
+- [ ] **Verify and Refine Source Mapping for Shorthand Arrows (Hover/Definition):**
+    - [ ] Write a targeted test (Node/Vitest script or LS integration test) focusing on `DocumentMapper` behavior for shorthand arrows.
+        - Use `sveltePreprocess` (Civet default `js:false` + TS) on a `.svelte` fixture with shorthand arrows.
+        - Call `svelte2tsx` on the preprocessed output.
+        - Chain the Civet→TS and TS→TSX maps.
+        - Assert `mapper.getOriginalPosition` for TSX locations corresponding to elements within and after shorthand arrow functions, ensuring they map back to correct Civet source lines, particularly testing positions *outside* the script block that might be affected by mis-mapping due to script content.
+    - [ ] If discrepancies are found, debug the map generation in `civetTransformer` or the chaining logic in `DocumentSnapshot`/`ConsumerDocumentMapper`.
+- [ ] **Ensure `svelte-preprocess-with-civet` Output is Consistently Handled:**
+    - [ ] Confirm that the `lang="ts"` attribute set by `civetTransformer` (when `js:false`) is always respected by `svelte2tsx` and the Svelte Language Server, preventing `svelte2tsx`'s fallback Civet compilation from running unnecessarily.
 
-**Related Files:**
-- `src/transformers/civet.ts` (Civet→TS codegen)
-- `src/transformers/typescript.ts` (TS→JS transpilation)
-- `packages/svelte2tsx/src/svelte2tsx/index.ts` (TSX conversion & fallback Civet handling)
-- `packages/svelte-vscode/syntaxes/civet.tmLanguage.json` and `svelte.tmLanguage.src.yaml` (syntax highlighting)
-- `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts` and `ConsumerDocumentMapper` (source map chaining)
+**Findings So Far:**
+*   The Civet compiler itself correctly handles shorthand arrow syntax.
+*   The recommended build-time preprocessing pipeline (Civet preprocessor `js:false` -> TS preprocessor -> Svelte compiler) works for shorthand arrows.
+*   The primary remaining issues are likely within the IDE's TextMate grammar (for syntax highlighting scope) and the source map chaining/application (for hover and go-to-definition accuracy, especially for positions outside the script tag potentially affected by script parsing/mapping issues).
+
+**Further Investigation & `civet-features` Test Results:**
+
+*   **TextMate Grammar Update:**
+    *   The Civet TextMate grammar (`civet.tmLanguage.json`) was updated with an indentation-based rule to better capture multi-line unbraced arrow function bodies:
+        ```json
+        {
+            "begin": "(?x)(?<=[=-]>)[ \t]*\r?\n(\s+)",
+            "end": "^(?!\\1)",
+            "name": "meta.function.body.civet"
+        }
+        ```
+    *   This aims to resolve syntax highlighting issues and scope bleeding that affected elements outside the `<script>` block.
+
+*   **Source Mapping for Shorthand Arrows:**
+    *   A new test (`test/transformers/civet-sourcemap-arrow.test.ts`) was created to specifically check if the Civet transformer (in `svelte-preprocess-with-civet`) generates source map `mappings` for each line within a multi-line unbraced arrow function body.
+    *   This test passed after ensuring the Civet transformer did not erroneously set `ast: undefined`, confirming that the basic Civet→TS source map for shorthand arrows is being generated correctly. This shifted focus towards how these maps are chained and utilized by the language server.
+
+*   **`civet-features` Test Suite Integration & Issues:**
+    *   To validate the fixes in a more integrated LSP environment, new test fixtures were added to `ltools-backup/packages/language-server/test/plugins/typescript/civet-features/`:
+        *   `diagnostics/arrow.svelte`: Contains `fn := (x: number) -> x * 2; res := fn("oops")` to test type errors in shorthand arrows.
+        *   `hover/arrow-template.svelte`: Contains `hoverArrow := () -> console.log "template_arrow"` used in both script and template to test hover.
+    *   A new test case for `arrow.svelte` was added to `civet-diagnostics.spec.ts`. The `civet-hover.spec.ts` automatically discovers new fixtures.
+    *   Running these tests revealed:
+        *   **Diagnostics (`civet-diagnostics.spec.ts`):**
+            *   The `simple.svelte` test (an existing fixture) began to time out.
+            *   The new `arrow.svelte` test failed. It reported an "unused variable `res`" diagnostic (TS6133) instead of the primary expected diagnostic: "Argument of type 'string' is not assignable to parameter of type 'number'" (TS2345) for `fn("oops")`. This indicates an issue with diagnostic prioritization or filtering.
+        *   **Hover (`civet-hover.spec.ts`):**
+            *   Hovers within the `<script>` block of `arrow-template.svelte` (e.g., on `hoverArrow` definition) worked correctly.
+            *   Hovering over `hoverArrow` in the template (e.g., `<div on:click={hoverArrow}>`) failed, returning `null`. Investigation showed that `CivetHoverProvider`'s current logic calls `getQuickInfoAtPosition` first. For template locations, this often returns `null`. The provider then doesn't proceed to the `getDefinitionAtPosition` path (which is intended to handle template hovers by finding the definition in script and mapping that back). This suggests a logic reordering or refinement is needed in `CivetHoverProvider` for template hovers.
+
+**Immediate Next Steps based on these findings:**
+1.  Address the logic in `CivetHoverProvider` to ensure template hovers correctly utilize `getDefinitionAtPosition` even if `getQuickInfoAtPosition` initially returns `null` for the template location.
+2.  Adjust the assertions or diagnostic filtering in `civet-diagnostics.spec.ts` for `arrow.svelte` to correctly expect and prioritize the "not assignable" type error.
+3.  Investigate and resolve the timeout issue with the `simple.svelte` diagnostics test.
 
 ## Appendix: Running the Civet Transformer + TypeScript Pipeline
 
@@ -365,3 +419,39 @@ To execute the Civet transformer and then feed its TypeScript output into the TS
    ```bash
    pnpm test test/transformers/civet.test.ts
    ```
+
+## VI. Playtest Results for Expanded Shorthand Arrow in Svelte Components
+
+We created `test/processors/civet-shorthand-markup-expanded.test.ts` to reproduce the user's full component scenario:
+
+- **Only Civet preprocessor**: compilation **fails** on shorthand arrow without braces (expected syntax error).
+- **Civet + TypeScript preprocessor**: compilation **succeeds**, since the TS transformer normalizes the shorthand arrow into valid JavaScript.
+
+This confirms:
+1. The **Civet transformer** generates valid TypeScript for shorthand arrows (wrapping body in braces).
+2. The **TypeScript transformer** cleans up any remaining TS syntax, enabling Svelte's compiler to succeed.
+3. The **Svelte processor** (only Civet) cannot handle shorthand arrow without TS normalization.
+
+## VII. Next Playtest: Source Map & Hover Position Mapping
+
+**Goal:** Verify that hover/definition lookups map TSX positions back to original Civet source lines correctly, especially after shorthand arrow transformations.
+
+**Approach:**
+1. Write a small Node/Vitest script that:
+   - Uses `sveltePreprocess` (with Civet + TS stages) on a `.svelte` fixture containing shorthand arrows.  
+   - Calls `svelte2tsx` on the preprocessed output to obtain TSX code and `tsxMap`.  
+   - Instantiates a `SourceMapDocumentMapper` chaining `preprocessorMap` (Civet→TS) and `tsxMap` (TS→TSX).  
+   - Queries `mapper.getOriginalPosition({ line, column })` for a known TSX location (e.g. position of the `increment1` definition or a `{line1}` interpolation) and asserts it matches the expected Civet source line.
+2. Add this test under `packages/language-server/test/` or as a standalone script in this repo.
+
+**Related Files:**
+- `packages/language-server/src/plugins/typescript/DocumentSnapshot.ts`  
+- `packages/language-server/src/plugins/typescript/DocumentMapper.ts`  
+- `packages/svelte2tsx/src/svelte2tsx/index.ts`
+
+---
+
+[X] Playtests created:
+- `test/transformers/civet-shorthand-arrow.test.ts`
+- `test/processors/civet-shorthand-markup-expanded.test.ts`
+[X] TextMate grammar enhancement: added indentation-based rule for unbraced arrow-function bodies in `packages/svelte-vscode/syntaxes/civet.tmLanguage.json`.

@@ -1,4 +1,4 @@
-import { EncodedSourceMap, TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
+import { EncodedSourceMap, TraceMap, originalPositionFor, generatedPositionFor } from '@jridgewell/trace-mapping';
 // @ts-ignore
 import { TemplateNode } from 'svelte/types/compiler/interfaces';
 import { svelte2tsx, IExportedNames, internalHelpers } from 'svelte2tsx';
@@ -219,6 +219,8 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
                 mapSources: civetMap?.sources,
                 mapFile: civetMap?.file,
             });
+            // Added debug: dump full Civet TS snippet
+            Logger.debug('[Civet Debug] Full civet TS snippet for ' + document.getFilePath() + ':\n' + tsSnippet);
 
             // Build mapper from TS snippet back to Civet
             if (civetMap) {
@@ -282,6 +284,8 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
             tsxMapSources: tsxMap?.sources,
             tsxMapFile: tsxMap?.file,
         });
+        // Added debug: dump full svelte2tsx TSX code
+        Logger.debug('[Civet Debug] Full svelte2tsx-generated TSX code for ' + document.getFilePath() + ':\n' + text);
 
         if (tsxMap) {
             tsxMap.sources = [document.uri];
@@ -344,7 +348,7 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
         private readonly text: string,
         private readonly nrPrependedLines: number,
         private readonly exportedNames: IExportedNames,
-        private readonly tsxMap?: EncodedSourceMap,
+        public readonly tsxMap?: EncodedSourceMap,
         private readonly htmlAst?: TemplateNode,
         preprocessorMapper?: DocumentMapper
     ) {
@@ -445,7 +449,23 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
     }
 
     getGeneratedPosition(pos: Position): Position {
-        return this.getMapper().getGeneratedPosition(pos);
+        Logger.debug('[Civet Debug] Mapping original position', pos, 'in', this.filePath);
+        // Raw svelte2tsx mapping (direct traceMap)
+        if (this.tsxMap) {
+            const rawMap = generatedPositionFor(
+                new TraceMap(this.tsxMap),
+                { line: pos.line + 1, column: pos.character, source: this.url }
+            );
+            if (rawMap) {
+                const rawPos: Position = { line: (rawMap.line || 0) - 1, character: rawMap.column || 0 };
+                Logger.debug('[Civet Debug] raw svelte2tsx mapping of original pos', rawPos, 'in', this.filePath);
+            } else {
+                Logger.debug('[Civet Debug] raw svelte2tsx mapping returned no mapping for', pos);
+            }
+        }
+        const gen = this.getMapper().getGeneratedPosition(pos);
+        Logger.debug('[Civet Debug] Mapped to generated position', gen, 'in', this.filePath);
+        return gen;
     }
 
     isInGenerated(pos: Position): boolean {
@@ -517,6 +537,26 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
      */
     public getPreprocessorMapper(): DocumentMapper | undefined {
         return this.preprocessorMapper;
+    }
+
+    // New public method for debugging raw svelte2tsx mapping
+    public getRawSvelte2TsxMappedPosition(originalPosition: Position): Position | null {
+        if (!this.tsxMap) {
+            Logger.debug('[SvelteDocumentSnapshot] getRawSvelte2TsxMappedPosition: No tsxMap available.');
+            return null;
+        }
+        try {
+            const rawMapped = generatedPositionFor(
+                new TraceMap(this.tsxMap),
+                { line: originalPosition.line + 1, column: originalPosition.character, source: this.url }
+            );
+            if (rawMapped && rawMapped.line != null && rawMapped.column != null) {
+                return { line: rawMapped.line -1, character: rawMapped.column };
+            }
+        } catch (e) {
+            Logger.error('[SvelteDocumentSnapshot] Error in getRawSvelte2TsxMappedPosition:', e);
+        }
+        return null;
     }
 }
 

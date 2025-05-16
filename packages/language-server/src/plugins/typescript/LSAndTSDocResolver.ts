@@ -27,6 +27,7 @@ import { createProjectService } from './serviceCache';
 import { GlobalSnapshotsManager, SnapshotManager } from './SnapshotManager';
 import { isSubPath } from './utils';
 import { FileMap, FileSet } from '../../lib/documents/fileCollection';
+import { Logger } from '../../logger';
 
 interface LSAndTSDocResolverOptions {
     notifyExceedSizeLimit?: () => void;
@@ -55,6 +56,9 @@ export class LSAndTSDocResolver {
         private readonly configManager: LSConfigManager,
         private readonly options?: LSAndTSDocResolverOptions
     ) {
+        // Enable debug logging for Civet diagnostics
+        Logger.setDebug(true);
+
         docManager.on(
             'documentChange',
             debounceSameArg(
@@ -166,9 +170,89 @@ export class LSAndTSDocResolver {
     }> {
         const { tsDoc, lsContainer, userPreferences } = await this.getLSAndTSDocWorker(document);
 
+        // Wrap the language service to log definition lookups
+        const origLang = lsContainer.getService();
+        const lang = origLang;
+        const origGetDef = lang.getDefinitionAtPosition.bind(lang);
+        lang.getDefinitionAtPosition = (fileName: string, position: number) => {
+            Logger.debug('[TS Debug] getDefinitionAtPosition', fileName, position);
+            const defs = origGetDef(fileName, position);
+            Logger.debug('[TS Debug] returned definitions:', defs);
+            if ((!defs || defs.length === 0) && typeof position === 'number') {
+                try {
+                    const program = origLang.getProgram();
+                    if (program) {
+                        const sourceFile = program.getSourceFile(fileName);
+                        if (sourceFile) {
+                            const fullText = sourceFile.getFullText();
+                            const start = Math.max(0, position - 50);
+                            const snippet = fullText.substring(start, position + 50);
+                            Logger.debug('[TS Debug] Text around position:\n' + snippet);
+                            
+                            let node: ts.Node | undefined = sourceFile;
+                            // Simplified node finding logic
+                            sourceFile.forEachChild(function iterate(child) {
+                                if (child.pos <= position && position < child.end) {
+                                    node = child;
+                                    ts.forEachChild(child, iterate);
+                                }
+                            });
+
+                            if (node && node !== sourceFile) {
+                                Logger.debug('[TS Debug] Node kind:', ts.SyntaxKind[node.kind], 'text:', node.getText(sourceFile));
+                                const checker = program.getTypeChecker();
+                                const symbol = checker.getSymbolAtLocation(node);
+                                Logger.debug('[TS Debug] Symbol at node:', symbol?.getName(), symbol);
+                            } else if (node === sourceFile) {
+                                Logger.debug('[TS Debug] Could not find specific node at position', position, '; node is SourceFile.');
+                            } else {
+                                Logger.debug('[TS Debug] No node found at position', position);
+                            }
+                            // Fallback: if defs empty and node is not Identifier, try nearest identifier on same line
+                            if ((!defs || defs.length === 0) && node && node.kind !== ts.SyntaxKind.Identifier) {
+                                const lineStarts = sourceFile.getLineStarts();
+                                // find line number
+                                let lineNumber = lineStarts.findIndex((ls) => ls > position) - 1;
+                                if (lineNumber < 0) lineNumber = 0;
+                                const lineStartOff = lineStarts[lineNumber];
+                                const lineEndOff = lineStarts[lineNumber + 1] ?? fullText.length;
+                                const lineText = fullText.substring(lineStartOff, lineEndOff);
+                                const relativePos = position - lineStartOff;
+                                const identifierRegex = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+                                let match: RegExpExecArray | null;
+                                let fallbackOffset: number | null = null;
+                                while ((match = identifierRegex.exec(lineText))) {
+                                    const start = match.index;
+                                    const end = start + match[0].length;
+                                    if (start <= relativePos && relativePos <= end) {
+                                        fallbackOffset = lineStartOff + start + Math.floor(match[0].length / 2);
+                                        break;
+                                    }
+                                    if (start > relativePos) {
+                                        fallbackOffset = lineStartOff + start + Math.floor(match[0].length / 2);
+                                        break;
+                                    }
+                                }
+                                if (fallbackOffset !== null) {
+                                    Logger.debug('[TS Hack] retrying getDefinitionAtPosition at', fallbackOffset);
+                                    const retryDefs = origGetDef(fileName, fallbackOffset);
+                                    Logger.debug('[TS Hack] retry returned definitions:', retryDefs);
+                                    if (retryDefs && retryDefs.length > 0) {
+                                        return retryDefs;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    Logger.error('[TS Debug] error introspecting AST at position', position, e);
+                }
+            }
+            return defs;
+        };
         return {
             tsDoc,
-            lang: lsContainer.getService(),
+            lang,
             userPreferences,
             lsContainer
         };

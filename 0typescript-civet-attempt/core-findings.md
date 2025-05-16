@@ -91,11 +91,104 @@ This document summarizes the investigation into enabling source maps for Civet c
 # History-log:
 
 ## Read-only milestones bellow after being written (freshest=up, historically=down):
+[28]
+- **Test Focus**: `unbraced-function.svelte` (e.g., `function fooFunc() 
+  foo := "foo"`) and its interpolation `{fooFunc}` in the template.
+- **Civet & svelte2tsx Correctness**: 
+    - Civet correctly transforms the unbraced function into a standard braced JS function.
+    - `svelte2tsx` correctly incorporates this braced function into its TSX output.
+- **Source Mapping Log Analysis**:
+    - The `getRawSvelte2TsxMappedPosition` log (our direct `svelte2tsx` map query) for the Svelte position of `{fooFunc}` (line 7, char 8) correctly maps to the TSX position of `fooFunc` in the template rendering code (line 10, char 36).
+    - The final `tsDoc.getGeneratedPosition()` (which uses the chained Civet->TS->TSX map) also correctly yields the same TSX position (line 10, char 36).
+    - This indicates that both the individual `svelte2tsx` map and our chained `ConsumerDocumentMapper` are correctly identifying the location of the `fooFunc` identifier in the generated TSX template section.
+- **TypeScript `getDefinitionAtPosition` Failure**: 
+    - When `lang.getDefinitionAtPosition` is called with the offset corresponding to the correct TSX position (offset 187 for line 10, char 36), it returns no definitions (`[]`).
+- **AST Introspection at Failure Point**:
+    - Logging the AST node at the failing offset (187) reveals that TypeScript considers the node to be a `StringLiteral` with text like `"template"` or `"div"` (from the `svelteHTML.createElement("div", ...)` calls).
+    - The `fooFunc` identifier is textually present immediately after or very near this string literal in the generated TSX.
+- **Conclusion for Unbraced Functions**: 
+    - The primary issue is not a major mis-mapping by the source map chain itself. The chain correctly leads to the line and general vicinity of the identifier in the TSX.
+    - The issue is that the *exact character offset* derived from the maps, when queried with `getDefinitionAtPosition`, resolves to an AST node (like a string literal for an HTML tag) that is *adjacent* to the intended `Identifier` node (`fooFunc`) in the flattened TSX structure produced by `svelte2tsx` for template content.
+    - TypeScript is highly sensitive to the precise offset. If it doesn't land squarely on the `Identifier` token, it won't resolve its definition.
+    - The current "nearest identifier" hack in `LSAndTSDocResolver.ts` is insufficient because the initial landing spot is too far or on the wrong type of AST node for it to reliably find the correct subsequent identifier on the line.
+- **Next Steps Indicated**: The strategy needs to shift from gross source map correction to a more precise targeting of the `Identifier` AST node at the TypeScript service query stage. When `getDefinitionAtPosition` fails, and we're in a template context, we need to inspect the local AST around the mapped TSX position to find the specific `Identifier` token for the expression that was in the Svelte template curly braces and retry the query on that node's precise span.
+
+[27]
+- **Test Refinement**: `civet-definition.spec.ts` was updated to dynamically find the `{\w+}` interpolation and to assert that the definition found by TS, when mapped back to the original Svelte file, correctly highlights the *exact text* of the sought identifier.
+- **New Fixture**: `unbraced-function.svelte` was added, featuring an indentation-based Civet function:
+  ```civet
+  function fooFunc() 
+    foo := "foo"
+    console.log foo
+  ```
+  and interpolations for both `fooFunc` and `foo`.
+- **Test Results**:
+    - Arrow function fixtures (`arrow-template.svelte`, `arrow-params.svelte`, etc.) now **PASS** with the refined assertions and the "nearest identifier" hack in `LSAndTSDocResolver.ts`. This confirms the hack is correctly papering over minor mapping misalignments for these cases in the automated tests.
+    - `unbraced-function.svelte` **FAILS**.
+        - The test dynamically targets `{fooFunc}`. Original position: `{ line: 7, character: 8 }`.
+        - Raw svelte2tsx map output for this Svelte position: `{ line: 10, character: 36 }` (in the TSX).
+        - Final mapped generated position (after Civet preprocessor map): `{ line: 10, character: 36 }`.
+        - TS `getDefinitionAtPosition` called with offset `187` (corresponding to the `{ line: 10, character: 36 }` TSX position).
+        - **TS returns no definitions.**
+        - AST Introspection at offset 187:
+            - Text around position: `sync () => { ... { svelteHTML.createElement("template", {}); ... { svelteHTML.createElement("div", {});`
+            - Node kind: `StringLiteral`, text: `"template"`
+        - The "nearest identifier" hack then retries at offset `184` (which is still within the `"template"` literal or nearby boilerplate) and also finds no definitions.
+- **Conclusion**:
+    - The "nearest identifier" hack, while helpful for some arrow function cases where the mapping was slightly off but still on the correct *line*, is insufficient for the `unbraced-function.svelte` scenario.
+    - For unbraced functions, the mapping from the Svelte template (`{fooFunc}`) to the generated TSX (`svelteHTML.createElement("div", {});fooFunc;`) is landing significantly far from the actual `fooFunc` identifier in the TSX. It's landing on `template` (the string literal argument to `createElement`).
+    - This indicates a more severe source-mapping issue, likely in how `svelte2tsx` (or our use of its maps) handles the output of Civet's indentation-based functions when they are embedded in its template rendering logic. The Civet-to-TS map for the script block itself might be correct, but when `svelte2tsx` processes the *entire file* (with the Civet-transformed TS script block now inside it), its own mapping from the Svelte template curly braces to the TSX representation of those braces is incorrect for these unbraced functions. The F12/Go-to-Definition experience in the IDE will be broken for these, as it relies on this initial mapping.
+
+
+[26]
+Debug output makes it crystal clear: the mapped offset (277) lands *inside* the `"div"` string literal, not on the `hoverArrow` identifier, so when TS's language service asks "what's the symbol here?" it sees a string literal and returns nothing. In other words, our source-map chain is pointing us at
+   { svelteHTML.createElement("div", {});hoverArrow; }
+but column 33 is inside `"div"` (hence you saw `AST node kind: StringLiteral text: "div"`), instead of at the `hoverArrow` token around column 42. That's why `getDefinitionAtPosition` comes back empty.
+
+Next logical steps:
+2. **Workaround in our resolver**: As a temporary hack, detect when TS returns no definitions and the AST node kind isn't an identifier—then scan forward on the same line for the nearest identifier (e.g. `/\bhoverArrow\b/`), compute its offset, and retry `getDefinitionAtPosition` there.
+
+This is the most confusing part. If the TypeScript Language Service is parsing the correct TSX (which the Text around position implies) and we query it at offset 277 (which is on hoverArrow), the AST node should be an Identifier for hoverArrow. The fact that our findNode utility (or TS itself via the symbols API) resolves this to the StringLiteral "div" (which is at offset 266-268) is a major issue. It means the perceived structure of the code by the TS service at that offset is not matching the textual content.
+
+
+Which path would you like to take? I can draft the upstream svelte2tsx patch, or implement the in-plugin fallback shift.
+
+
+[25]
+- Civet correctly turned your shorthand arrow into a named function.
+- svelte2tsx correctly put that function into its $$render function and left two hoverArrow; references in the template.
+- Our source-map chain is correctly landing on one of those references.
+- **Yet TypeScript itself** isn't finding the definition at that generated-code location
+|
+The code is here,
+The mapping is correct,
+TS simply isn't returning a definition for it.
+
+[24]
+The fact that hover-template.svelte (which uses a regular variable hoverVarTemplate := "...") works correctly for markup hovers strongly suggests the issue is specific to how shorthand arrow functions are handled in this script-to-template definition lookup.
+|
+The core remaining issue for hover is purely related to resolving definitions from the template back to shorthand arrow function declarations in the script.
+
+
+[23]
+Refactored the hover provider so that:
+We first detect template (markup) positions and, instead of bailing on a missing QuickInfo, we call getDefinitionAtPosition, then fetch QuickInfo at that definition site and map it back to the original Civet source.
+Only after that do we fall back to the normal "script" QuickInfo path.
+
+
+[22] - Investigated shorthand arrow function integration. Confirmed Civet compiler and preprocessor pipeline (Civet->TS, TS->JS) handle them correctly for build. Updated TextMate grammar in `civet.tmLanguage.json` with an indentation-based rule for better multi-line unbraced arrow body scoping. Verified (`test/transformers/civet-sourcemap-arrow.test.ts`) that the Civet transformer in `svelte-preprocess-with-civet` generates correct Civet->TS source maps for these arrow functions. Focused on `civet-features` tests:
+    - Added `diagnostics/arrow.svelte` and `hover/arrow-template.svelte` fixtures.
+    - `civet-diagnostics.spec.ts` (`arrow.svelte`): Failed, reporting secondary "unused var" instead of primary "not assignable" type error. `simple.svelte` test timed out.
+    - `civet-hover.spec.ts` (`arrow-template.svelte`): Script hover worked. Template hover failed (returned `null`) due to `CivetHoverProvider` not falling back to `getDefinitionAtPosition` if `getQuickInfoAtPosition` is `null` for template locations.
+    - Next steps: Fix `CivetHoverProvider` template logic, adjust `civet-diagnostics.spec.ts` assertion for `arrow.svelte`, and resolve `simple.svelte` timeout.
+
+[21] - Added indentation-based TextMate grammar rule in `civet.tmLanguage.json` to properly scope multi-line, unbraced shorthand arrow-function bodies; verified transformer source maps include mappings for each arrow body line. Next: investigate map chaining in `DocumentMapper` for correct hover positions outside `<script>`.
+
 [20] - Completed Phase 3 & Phase 4: hover, completions, go-to-definition, code-actions, and diagnostics now all working end-to-end via the chained TSX→TS→Civet mapping; remaining work: de-duplicate diagnostics and disable TSX fallback compile in svelte2tsx.
 
 [19]
 Currently, `CivetHoverProvider.doHover` works like this:
-1.  **Language‐check**  It only runs for `<script lang="civet">` blocks (skips everything else).
+1.  **Language-check**  It only runs for `<script lang="civet">` blocks (skips everything else).
 2.  **Snapshot + Mapping Setup**  
     It calls `LSAndTSDocResolver.getLSAndTSDoc(document)`, which under the covers does:  
     • Run the Civet preprocessor → TypeScript snippet + V3 map (`preprocessorMapper`).  
@@ -120,27 +213,27 @@ Currently, `CivetHoverProvider.doHover` works like this:
 
 **It's Hacky**  
 Because we:
-- Special‐case the template hover via definitions,  
-- Then rely on the two‐stage map chain which isn't "aware" of the Civet snippet's exact bounds,  
-- And still lose pure‐script hovers.
+- Special-case the template hover via definitions,  
+- Then rely on the two-stage map chain which isn't "aware" of the Civet snippet's exact bounds,  
+- And still lose pure-script hovers.
 
 **Our Phase 4 Proposal ("Fix the TSX Map Chain")**  
-Instead of special‐casing in the hover provider, we teach the map‐chain itself to know "if your generated position lies within the injected TS snippet region, *skip* the TSX→Svelte mapping step and go straight to the parent (Civet→TS) map." Concretely:
+Instead of special-casing in the hover provider, we teach the map-chain itself to know "if your generated position lies within the injected TS snippet region, *skip* the TSX→Svelte mapping step and go straight to the parent (Civet→TS) map." Concretely:
 
 1.  **Augment `ConsumerDocumentMapper`**  
-    - Accept the script‐region's start/end (in TSX coordinates) in its constructor.  
+    - Accept the script-region's start/end (in TSX coordinates) in its constructor.  
     - In `getOriginalPosition(generatedPosition)`, if `generatedPosition` is inside that snippet region, do:
       ```ts
-      // Short‐circuit: map only via parent (Civet→TS)
+      // Short-circuit: map only via parent (Civet→TS)
       return this.parentMapper!.getOriginalPosition(generatedPosition);
       ```
       Otherwise run the existing TSX→Civet chain.
 
 2.  **Pass Script Region**  
-    In `SvelteDocumentSnapshot.initMapper()`, when you build the `ConsumerDocumentMapper`, also hand it the TSX‐side bounds of your Civet snippet (you can compute them from `scriptInfo.container.start/end` plus the prepended lines from svelte2tsx).
+    In `SvelteDocumentSnapshot.initMapper()`, when you build the `ConsumerDocumentMapper`, also hand it the TSX-side bounds of your Civet snippet (you can compute them from `scriptInfo.container.start/end` plus the prepended lines from svelte2tsx).
 
 3.  **Simplify `CivetHoverProvider`**  
-    Once the mapper correctly handles script‐only offsets, you can delete the `if (markup) { …getDefinitionAtPosition… }` branch and always:
+    Once the mapper correctly handles script-only offsets, you can delete the `if (markup) { …getDefinitionAtPosition… }` branch and always:
 
     ```ts
     const generatedPosition = tsDoc.getGeneratedPosition(position);
@@ -156,9 +249,9 @@ Instead of special‐casing in the hover provider, we teach the map‐chain itse
 
 **Why This Is Better**  
 - It keeps all the mapping logic in one place (the `DocumentMapper`), rather than sprinkling hacks in the hover provider.  
-- Once fixed, *all* LSP features (hover, completions, diagnostics, definitions) will have consistent mapping for script‐only code.  
+- Once fixed, *all* LSP features (hover, completions, diagnostics, definitions) will have consistent mapping for script-only code.  
 - Avoid a special "if in template" code path in your provider.  
-- The hover provider becomes trivial and future‐proof.
+- The hover provider becomes trivial and future-proof.
 
 
 **[18] - End-to-end IDE integration verified with editor diagnostics and hover for Civet scripts.**

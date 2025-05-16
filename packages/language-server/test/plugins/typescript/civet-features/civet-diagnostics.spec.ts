@@ -48,4 +48,23 @@ describe('Civet Diagnostics Feature', () => {
     assert.strictEqual(diag.range.start.line, 2);
     assert.strictEqual(diag.range.start.character, 15);
   });
+
+  it('reports TypeScript errors for arrow-function call with wrong type', async () => {
+    const { provider, document } = setup('arrow.svelte');
+    const diagnostics = await provider.getDiagnostics(document);
+    assert.ok(diagnostics.length > 0, 'Should have at least one diagnostic for arrow function');
+    const diag = diagnostics[0];
+
+    // The error should mention assignment to wrong parameter type
+    assert.ok(
+      diag.message.includes('not assignable'),
+      `Unexpected diagnostic message: ${diag.message}`
+    );
+    // The diagnostic range should map back to the arrow call line
+    assert.strictEqual(diag.range.start.line, 2);
+    assert.ok(
+      diag.range.start.character > 0,
+      'Diagnostic character must be > 0'
+    );
+  });
 });
