@@ -8,9 +8,22 @@ import { Generics } from './nodes/Generics';
 import { ImplicitStoreValues } from './nodes/ImplicitStoreValues';
 import { processInstanceScriptContent } from './processInstanceScriptContent';
 import { createModuleAst, ModuleAst, processModuleScriptTag } from './processModuleScriptTag';
-import path from 'path';
+import path, { dirname, resolve } from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
+
+/**
+ * Dynamically load the Civet transformer to bypass package.json exports restrictions.
+ */
+function getCivetTransformer(): any {
+  // @ts-ignore: dynamic require of Civet transformer
+  const civetPkgIndex = require.resolve('svelte-preprocess-with-civet');
+  const civetPkgDir = dirname(civetPkgIndex);
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { transformer } = require(resolve(civetPkgDir, 'transformers', 'civet.js'));
+  return transformer;
+}
+const civetTransformer = getCivetTransformer();
 
 // Helper function to extract attribute value from Svelte AST attribute array
 function getAttributeValue(attributes: any[], attributeName: string): string | undefined {
@@ -104,8 +117,21 @@ export function svelte2tsx(
         const langAttr = getAttributeValue(moduleScriptTag.attributes, 'lang');
         if (langAttr === 'civet') {
             console.log('svelte2tsx: Civet module script detected via lang="' + langAttr + '"');
-            // TODO: Preprocess Civet content in moduleScriptTag.content
-            // For now, we're just recognizing it.
+            // Preprocess Civet module script
+            const civetContent = str.original.slice(moduleScriptTag.content.start, moduleScriptTag.content.end);
+            // @ts-ignore: assume synchronous Processed return
+            const { code: civetCode, map: civetMap } = civetTransformer({
+                content: civetContent,
+                filename: options.filename,
+                options: { sourceMap: true, inlineMap: false },
+                attributes: moduleScriptTag.attributes
+            } as any);
+            str.overwrite(moduleScriptTag.content.start, moduleScriptTag.content.end, civetCode);
+            // apply Civet→TS sourcemap to the replaced snippet
+            if (civetMap) {
+                // @ts-ignore: applySourceMap is a runtime MagicString method missing in type defs
+                str.applySourceMap(civetMap, options.filename, civetContent);
+            }
         }
 
         moduleAst = createModuleAst(str, moduleScriptTag);
@@ -136,8 +162,20 @@ export function svelte2tsx(
         const langAttr = getAttributeValue(scriptTag.attributes, 'lang');
         if (langAttr === 'civet') {
             console.log('svelte2tsx: Civet instance script detected via lang="' + langAttr + '"');
-            // TODO: Preprocess Civet content in scriptTag.content
-            // For now, we're just recognizing it.
+            // Preprocess Civet instance script
+            const civetContentInst = str.original.slice(scriptTag.content.start, scriptTag.content.end);
+            // @ts-ignore: assume synchronous Processed return
+            const { code: civetCodeInst, map: civetMapInst } = civetTransformer({
+                content: civetContentInst,
+                filename: options.filename,
+                options: { sourceMap: true, inlineMap: false },
+                attributes: scriptTag.attributes
+            } as any);
+            str.overwrite(scriptTag.content.start, scriptTag.content.end, civetCodeInst);
+            if (civetMapInst) {
+                // @ts-ignore: applySourceMap is a runtime method
+                str.applySourceMap(civetMapInst, options.filename, civetContentInst);
+            }
         }
 
         const res = processInstanceScriptContent(
