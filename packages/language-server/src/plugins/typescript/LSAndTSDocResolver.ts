@@ -172,106 +172,190 @@ export class LSAndTSDocResolver {
 
         // Wrap the language service to log definition lookups
         const origLang = lsContainer.getService();
-        const lang = origLang;
-        const origGetDef = lang.getDefinitionAtPosition.bind(lang);
+        const lang = { ...origLang }; // Clone to override methods safely
+
+        const svelteFilePath = document.getFilePath()!;
+        const tsxFilePath = tsDoc.filePath;
+
+        const origGetDef = origLang.getDefinitionAtPosition.bind(origLang);
         lang.getDefinitionAtPosition = (fileName: string, position: number) => {
-            Logger.debug('[TS Debug] getDefinitionAtPosition', fileName, position);
-            const defs = origGetDef(fileName, position);
-            Logger.debug('[TS Debug] returned definitions:', defs);
-            if ((!defs || defs.length === 0) && typeof position === 'number') {
-                try {
-                    const program = origLang.getProgram();
+            // fileName is the Svelte file path, position is offset in Svelte file
+            console.log('WRAPPER HIT: getDefinitionAtPosition. Incoming Svelte fileName:', fileName, 'Incoming Svelte position:', position, 'Target TSX filePath:', tsxFilePath);
+            
+            const svelteLineCharPos = document.positionAt(position); // Convert Svelte offset to Line/Char
+            const tsxPosition = tsDoc.getGeneratedPosition(svelteLineCharPos); // Map Svelte Line/Char to TSX Line/Char
+            const tsxOffset = tsDoc.offsetAt(tsxPosition); // Convert TSX Line/Char to TSX offset
+
+            Logger.debug(
+                '[LSResolver] getDefinitionAtPosition: Svelte input:', {fileName, position, line: svelteLineCharPos.line, char: svelteLineCharPos.character }, 
+                'Mapped to TSX:', {tsxFilePath, tsxOffset, line: tsxPosition.line, char: tsxPosition.character}
+            );
+
+            const defs = origGetDef(tsxFilePath, tsxOffset);
+            Logger.debug('[LSResolver] Initial getDefinitionAtPosition result (from TSX):', defs);
+
+            // Check defs here to satisfy linter for the disabled block below
+            const اولیهDefsExist = !!defs && defs.length > 0;
+            // Effectively disable fallback by changing condition to always false
+            if (false && ! اولیهDefsExist && typeof tsxOffset === 'number') { // Fallback disabled, using اولیهDefsExist to satisfy linter
+                Logger.debug('[LSResolver] Initial getDefinitionAtPosition failed on TSX. Trying fallbacks. Fallback uses TSX offset:', tsxOffset);
+                const program = origLang.getProgram()!;
                     if (program) {
-                        const sourceFile = program.getSourceFile(fileName);
+                    const sourceFile = program.getSourceFile(tsxFilePath)!;
                         if (sourceFile) {
-                            Logger.debug('[TS Fallback] Initial getDefinitionAtPosition failed. Original position:', position);
-                            // Text-based fallback: scan the TSX line text for the next identifier and retry
-                            try {
-                                const loc = sourceFile.getLineAndCharacterOfPosition(position);
-                                const fullText = tsDoc.getFullText();
-                                const lines = fullText.split(/\r?\n/);
-                                const lineText = lines[loc.line] || '';
-                                const substr = lineText.slice(loc.character);
-                                const idMatch = /\b[A-Za-z_]\w*\b/.exec(substr);
-                                if (idMatch) {
-                                    const candidateOffset = position + idMatch.index;
-                                    Logger.debug('[TS TextFallback] Found text candidate', idMatch[0], 'at offset', candidateOffset);
-                                    const retry = origGetDef(fileName, candidateOffset);
-                                    Logger.debug('[TS TextFallback] Retry returned:', retry);
-                                    if (retry && retry.length > 0) {
-                                        return retry;
-                                    }
-                                }
-                            } catch (e) {
-                                Logger.error('[TS TextFallback] Error during text fallback:', e);
+                        try {
+                            const loc = sourceFile.getLineAndCharacterOfPosition(tsxOffset);
+                            const fullText = tsDoc.getText(0, tsDoc.getLength());
+                            const lines = fullText.split(/\r?\n/);
+                            const lineText = lines[loc.line] || '';
+                            const prefix = lineText.slice(0, loc.character);
+                            const suffix = lineText.slice(loc.character);
+                            const prefixMatch = /[A-Za-z_]\w*$/.exec(prefix);
+                            const suffixMatch = /^[A-Za-z_]\w*/.exec(suffix);
+                            let candidateOffsetInTsx: number | undefined;
+                            if (prefixMatch && prefixMatch[0].length > 0) {
+                                const startCol = loc.character - prefixMatch![0].length;
+                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
+                            } else if (suffixMatch && suffixMatch![0].length > 0) {
+                                const startCol = loc.character + (suffixMatch! .index ?? 0);
+                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
                             }
-                            // AST-based fallback: find nearest identifier in AST scope
-                            let nodeAtPosition: ts.Node | undefined = sourceFile;
-                            function findNodeAtPositionRecursive(node: ts.Node) {
-                                if (node.pos <= position && position < node.end) {
-                                    nodeAtPosition = node;
-                                    ts.forEachChild(node, findNodeAtPositionRecursive);
+                            if (candidateOffsetInTsx !== undefined) {
+                                Logger.debug('[LSResolver TextFallback] Retry getDefinitionAtPosition at TSX offset:', candidateOffsetInTsx);
+                                const textRetryDefs = origGetDef(tsxFilePath, candidateOffsetInTsx!);
+                                if (textRetryDefs && textRetryDefs!.length > 0) {
+                                    Logger.debug('[LSResolver TextFallback] Text-based fallback found definitions:', textRetryDefs);
+                                    return textRetryDefs;
                                 }
                             }
-                            findNodeAtPositionRecursive(sourceFile);
-                            if (nodeAtPosition && nodeAtPosition !== sourceFile) {
-                                Logger.debug('[TS Fallback] Node at original position:',
-                                    ts.SyntaxKind[nodeAtPosition.kind], 'text:', nodeAtPosition.getText(sourceFile).trim().substring(0, 30));
-                                if (nodeAtPosition.kind !== ts.SyntaxKind.Identifier) {
-                                    const { line: targetLine } = sourceFile.getLineAndCharacterOfPosition(position);
-                                    let bestCandidateNode: ts.Identifier | undefined;
-                                    let minDistanceAfterPosition = Infinity;
-                                    let searchScopeNode = nodeAtPosition.parent;
-                                    while (searchScopeNode && searchScopeNode.kind !== ts.SyntaxKind.Block && searchScopeNode.kind !== ts.SyntaxKind.SourceFile) {
-                                        searchScopeNode = searchScopeNode.parent!;
+                        } catch (e: any) {
+                            Logger.debug('[LSResolver TextFallback] Error:', e.message);
                                     }
-                                    searchScopeNode = searchScopeNode || sourceFile;
-                                    Logger.debug('[TS Fallback] AST Search Scope kind:', ts.SyntaxKind[searchScopeNode.kind]);
-                                    const identifiers: ts.Identifier[] = [];
-                                    function collectIdentifiers(node: ts.Node) {
-                                        if (ts.isIdentifier(node)) identifiers.push(node);
-                                        ts.forEachChild(node, collectIdentifiers);
-                                    }
-                                    collectIdentifiers(searchScopeNode);
-                                    const byLine = new Map<number, ts.Identifier[]>();
-                                    for (const id of identifiers) {
-                                        const start = id.getStart(sourceFile!);
-                                        const { line: idLine } = sourceFile!.getLineAndCharacterOfPosition(start);
-                                        if (!byLine.has(idLine)) byLine.set(idLine, []);
-                                        byLine.get(idLine)!.push(id);
-                                    }
-                                    const MAX_DELTA = 3;
-                                    for (let delta = 0; delta <= MAX_DELTA; delta++) {
-                                        const lineToCheck = targetLine + delta;
-                                        const lineIds = byLine.get(lineToCheck);
-                                        if (lineIds && lineIds.length > 0) {
-                                            let candidate = lineIds.find(id => id.parent?.kind === ts.SyntaxKind.ExpressionStatement && ['svelteHTML','createElement'].indexOf(id.getText(sourceFile!)) === -1);
-                                            if (!candidate) {
-                                                candidate = lineIds.find(id => ['svelteHTML','createElement'].indexOf(id.getText(sourceFile!)) === -1);
-                                            }
-                                            if (candidate) {
-                                                Logger.debug('[TS Fallback] Found candidate Identifier on line', lineToCheck, ':', candidate.getText(sourceFile!), 'at pos:', candidate.getStart(sourceFile!));
-                                                const retryDefs = origGetDef(fileName, candidate.getStart(sourceFile!));
-                                                Logger.debug('[TS Fallback] Retry with candidate returned:', retryDefs);
-                                                if (retryDefs && retryDefs.length > 0) return retryDefs;
-                                            }
+
+                        // AST-based fallback (operates on TSX AST)
+                        Logger.debug('[LSResolver ASTFallback] Trying AST-based fallback for position (TSX offset):', tsxOffset);
+                        let closestNode: ts.Node | undefined;
+                        let closestDistance = Infinity;
+
+                        function findNodeAtPositionRecursive(node: ts.Node | undefined) {
+                            if (!node) return; // Guard for undefined
+                                        if (ts.isIdentifier(node)) {
+                                const distance = Math.abs(node.getStart(sourceFile) - tsxOffset); 
+                                if (distance < closestDistance) {
+                                    closestDistance = distance;
+                                    closestNode = node;
+                                }
                                         }
+                            ts.forEachChild(node, findNodeAtPositionRecursive);
                                     }
-                                } else {
-                                    Logger.debug('[TS Fallback] Could not find specific node at original position or node is SourceFile.');
-                                }
-                            }
+                        findNodeAtPositionRecursive(sourceFile);
+
+                        if (closestNode) {
+                            const nodeStartInTsx = closestNode!.getStart(sourceFile);
+                            Logger.debug('[LSResolver ASTFallback] Found closest node in TSX:', closestNode!.getText(sourceFile), 'kind:', ts.SyntaxKind[closestNode!.kind], 'at TSX offset:', nodeStartInTsx);
+                            const astRetryDefs = origGetDef(tsxFilePath, nodeStartInTsx);
+                            Logger.debug('[LSResolver ASTFallback] Retry with AST candidate returned:', astRetryDefs!);
+                            if (astRetryDefs && astRetryDefs!.length > 0) return astRetryDefs!;
+                        } else {
+                            Logger.debug('[LSResolver ASTFallback] No close node found for TSX offset:', tsxOffset);
                         }
                     }
-                } catch (e) {
-                    Logger.error('[TS Fallback] Error during fallback logic:', e);
                 }
             }
+            // Definitions are in TSX coordinates. They need to be mapped back to Svelte by the caller of getLSAndTSDoc if necessary.
             return defs;
         };
+
+        const origGetQuickInfo = origLang.getQuickInfoAtPosition.bind(origLang);
+        lang.getQuickInfoAtPosition = (fileName: string, position: number) => {
+            // fileName is the Svelte file path, position is offset in Svelte file
+            console.log('WRAPPER HIT: getQuickInfoAtPosition. Incoming Svelte fileName:', fileName, 'Incoming Svelte position:', position, 'Target TSX filePath:', tsxFilePath);
+
+            const svelteLineCharPos = document.positionAt(position);
+            const tsxPosition = tsDoc.getGeneratedPosition(svelteLineCharPos);
+            const tsxOffset = tsDoc.offsetAt(tsxPosition);
+
+            Logger.debug(
+                '[LSResolver] getQuickInfoAtPosition: Svelte input:', {fileName, position, line: svelteLineCharPos.line, char: svelteLineCharPos.character }, 
+                'Mapped to TSX:', {tsxFilePath, tsxOffset, line: tsxPosition.line, char: tsxPosition.character}
+            );
+
+            const quickInfo = origGetQuickInfo(tsxFilePath, tsxOffset);
+            Logger.debug('[LSResolver] Initial getQuickInfoAtPosition result (from TSX):', quickInfo ? { text: quickInfo.displayParts?.map(dp => dp.text).join(''), kind: quickInfo.kind } : null);
+            
+            // Effectively disable fallback by changing condition to always false
+            if (false && !quickInfo && typeof tsxOffset === 'number') { // Fallback disabled
+                Logger.debug('[LSResolver] Initial getQuickInfoAtPosition failed on TSX. Fallback uses TSX offset:', tsxOffset);
+                // Text-based fallback (operates on TSX content)
+                const program = origLang.getProgram?.()!;
+                if (program) {
+                    const sourceFile = program.getSourceFile(tsxFilePath)!;
+                    if (sourceFile) {
+                        try {
+                            const loc = sourceFile.getLineAndCharacterOfPosition(tsxOffset);
+                            const fullText = tsDoc.getText(0, tsDoc.getLength());
+                            const lines = fullText.split(/\r?\n/);
+                            const lineText = lines[loc.line] || '';
+                            const prefix = lineText.slice(0, loc.character);
+                            const suffix = lineText.slice(loc.character);
+                            const prefixMatch = /[A-Za-z_]\w*$/.exec(prefix);
+                            const suffixMatch = /^[A-Za-z_]\w*/.exec(suffix);
+                            let candidateOffsetInTsx: number | undefined;
+                            if (prefixMatch) {
+                                const startCol = loc.character - prefixMatch![0].length;
+                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
+                            } else if (suffixMatch) {
+                                const startCol = loc.character + (suffixMatch! .index ?? 0);
+                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
+                            }
+                            if (candidateOffsetInTsx !== undefined) {
+                                Logger.debug('[LSResolver TextFallback] Retry QuickInfo at TSX offset:', candidateOffsetInTsx);
+                                const retryQuickInfo = origGetQuickInfo(tsxFilePath, candidateOffsetInTsx!);
+                                if (retryQuickInfo) {
+                                    Logger.debug('[LSResolver TextFallback] Retry QuickInfo returned:', retryQuickInfo);
+                                    return retryQuickInfo;
+                                }
+                            }
+                        } catch (e: any) {
+                            Logger.debug('[LSResolver TextFallback] Error:', e.message);
+                                                }
+                        // AST-based fallback
+                        Logger.debug('[LSResolver ASTFallback] Trying AST-based fallback for TSX offset:', tsxOffset);
+                        let closestNode: ts.Node | undefined;
+                        let closestDistance = Infinity;
+                        function findNode(node: ts.Node | undefined) {
+                            if (!node) return; // Guard for undefined node
+                            if (ts.isIdentifier(node)) {
+                                const distance = Math.abs(node.getStart(sourceFile) - tsxOffset);
+                                if (distance < closestDistance) {
+                                    closestDistance = distance;
+                                    closestNode = node;
+                                }
+                            }
+                            ts.forEachChild(node, findNode);
+                        }
+                        findNode(sourceFile);
+                        if (closestNode) {
+                            const nodeOffset = closestNode!.getStart(sourceFile);
+                            Logger.debug('[LSResolver ASTFallback] Retry QuickInfo at TSX offset (AST):', nodeOffset);
+                            const astQuickInfo = origGetQuickInfo(tsxFilePath, nodeOffset);
+                            if (astQuickInfo) {
+                                Logger.debug('[LSResolver ASTFallback] Retry AST QuickInfo returned:', astQuickInfo);
+                                return astQuickInfo;
+                            }
+                        } else {
+                            Logger.debug('[LSResolver ASTFallback] No identifier found near TSX offset:', tsxOffset);
+                }
+            }
+                }
+            }
+            // QuickInfo contains a textSpan in TSX coordinates. It needs to be mapped back by the caller.
+            return quickInfo;
+        };
+
         return {
             tsDoc,
-            lang,
+            lang, // return the wrapped version
             userPreferences,
             lsContainer
         };

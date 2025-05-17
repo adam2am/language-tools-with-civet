@@ -1,7 +1,7 @@
 import MagicString from 'magic-string';
 import { convertHtmlxToJsx, TemplateProcessResult } from '../htmlxtojsx_v2';
 import { parseHtmlx } from '../utils/htmlxparser';
-import { transformCivetSourceMap, registerCivetSourceMapLocations } from '../utils/sourcemap';
+// import { transformCivetSourceMap, registerCivetSourceMapLocations } from '../utils/sourcemap'; // Removed as unused
 import { addComponentExport } from './addComponentExport';
 import { createRenderFunction } from './createRenderFunction';
 import { ExportedNames } from './nodes/ExportedNames';
@@ -12,7 +12,10 @@ import { createModuleAst, ModuleAst, processModuleScriptTag } from './processMod
 import path from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
+// import { TraceMap } from '@jridgewell/trace-mapping'; // Keep for upcoming chaining - Commented out for build
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 
 let civetCompiler: any = null;
 function getCivetCompiler() {
@@ -85,6 +88,9 @@ export function svelte2tsx(
         noSvelteComponentTyped?: boolean;
     } = { parse }
 ) {
+    let civetModuleMapJson: any = null;
+    let civetInstanceMapJson: any = null;
+
     options.mode = options.mode || 'ts';
     options.version = options.version || VERSION;
 
@@ -138,32 +144,15 @@ export function svelte2tsx(
                 js: false
             });
             const civetCode = civetResult.code;
+            if (civetResult.sourceMap) {
+                civetModuleMapJson = civetResult.sourceMap.json();
+            }
             
             str.overwrite(moduleScriptTag.content.start, moduleScriptTag.content.end, civetCode);
-            // If Civet returned a V3 source map, merge it into our MagicString map
-            if (civetResult.sourceMap && typeof civetResult.sourceMap.json === 'function') {
-                const v3Map = civetResult.sourceMap.json(
-                    svelteFilePath,
-                    `${svelteFilePath}.ts`
-                );
-                // Optionally tweak the Civet source map before registering
-                const tweakedMap = transformCivetSourceMap(
-                    v3Map,
-                    moduleScriptTag.content.start,
-                    moduleScriptTag.content.end,
-                    str.original,
-                    civetCode,
-                    svelteFilePath
-                );
-                // Register positions from this script for source mapping
-                registerCivetSourceMapLocations(
-                    tweakedMap,
-                    moduleScriptTag.content.start,
-                    moduleScriptTag.content.end,
-                    str.original,
-                    str
-                );
-            }
+            // Removed transformCivetSourceMap and registerCivetSourceMapLocations calls
+            // Let MagicString handle mapping for the overwritten segment based on its default behavior.
+            // We might need to explicitly provide the Civet V3 map to MagicString if possible, 
+            // or chain it manually after svelte2tsx's map generation.
         }
 
         moduleAst = createModuleAst(str, moduleScriptTag);
@@ -206,32 +195,12 @@ export function svelte2tsx(
                 js: false
             });
             const civetCodeInst = civetResultInst.code;
+            if (civetResultInst.sourceMap) {
+                civetInstanceMapJson = civetResultInst.sourceMap.json();
+            }
             
             str.overwrite(scriptTag.content.start, scriptTag.content.end, civetCodeInst);
-            // If Civet returned a V3 source map, merge it into our MagicString map for instance script
-            if (civetResultInst.sourceMap && typeof civetResultInst.sourceMap.json === 'function') {
-                const v3Map = civetResultInst.sourceMap.json(
-                    svelteFilePath,
-                    `${svelteFilePath}.ts`
-                );
-                // Optionally tweak the Civet source map before registering
-                const tweakedMap = transformCivetSourceMap(
-                    v3Map,
-                    scriptTag.content.start,
-                    scriptTag.content.end,
-                    str.original,
-                    civetCodeInst,
-                    svelteFilePath
-                );
-                // Register positions from this script for source mapping
-                registerCivetSourceMapLocations(
-                    tweakedMap,
-                    scriptTag.content.start,
-                    scriptTag.content.end,
-                    str.original,
-                    str
-                );
-            }
+            // Removed transformCivetSourceMap and registerCivetSourceMapLocations calls
         }
 
         const res = processInstanceScriptContent(
@@ -371,9 +340,17 @@ export function svelte2tsx(
         };
     } else {
         str.prepend('///<reference types="svelte" />\n');
+        const finalMagicStringMap = str.generateMap({ hires: true, source: options?.filename });
+
+        if (civetModuleMapJson || civetInstanceMapJson) {
+            console.log('svelte2tsx: Civet Module Script V3 Map JSON:', JSON.stringify(civetModuleMapJson, null, 2));
+            console.log('svelte2tsx: Civet Instance Script V3 Map JSON:', JSON.stringify(civetInstanceMapJson, null, 2));
+            console.log('svelte2tsx: Final MagicString V3 Map JSON (potentially including Civet sections):', JSON.stringify(finalMagicStringMap, null, 2));
+        }
+
         return {
             code: str.toString(),
-            map: str.generateMap({ hires: true, source: options?.filename }),
+            map: finalMagicStringMap,
             exportedNames: exportedNames.getExportsMap(),
             events: events.createAPI(),
             // not part of the public API so people don't start using it

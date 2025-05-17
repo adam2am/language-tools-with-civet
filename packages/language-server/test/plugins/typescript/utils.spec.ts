@@ -49,4 +49,16 @@ describe('TypeScript utils', () => {
         // length should be end - start
         assert.strictEqual(textSpan.length, doc.offsetAt(endPos) - doc.offsetAt(startPos));
     });
+
+    it('convertRange maps multi-line spans correctly', () => {
+        // spans from 'world' into second line 'this is a test'
+        // start at offset 6 ('w' of 'world') length 20
+        const multi: Range = convertRange(doc, { start: 6, length: 20 });
+        // offset 6 maps to line 0, char 6
+        assert.strictEqual(multi.start.line, 0);
+        assert.strictEqual(multi.start.character, 6);
+        // offset 6+20=26 maps to start of newline after second line => line 1, char 14
+        assert.strictEqual(multi.end.line, 1);
+        assert.strictEqual(multi.end.character, 14);
+    });
 }); 

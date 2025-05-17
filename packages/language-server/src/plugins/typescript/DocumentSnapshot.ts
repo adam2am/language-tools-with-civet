@@ -31,7 +31,6 @@ import { dirname, resolve } from 'path';
 import { URI } from 'vscode-uri';
 import { surroundWithIgnoreComments } from './features/utils';
 import { configLoader } from '../../lib/documents/configLoader';
-import { getCivetTransformer } from '../civet/utils';
 
 /**
  * An error which occurred while trying to parse/preprocess the svelte file contents.
@@ -194,56 +193,7 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
     let text = document.getText();
     let exportedNames: IExportedNames = { has: () => false };
     let htmlAst: TemplateNode | undefined;
-    let preprocessorMapper: DocumentMapper | undefined;
-
-    // Apply Civet preprocessor if lang="civet"
-    const scriptInfo = document.scriptInfo || document.moduleScriptInfo;
-    if (scriptInfo?.attributes.lang === 'civet') {
-        try {
-            // Use shared helper to load the Civet transformer
-            const civetTransformer = getCivetTransformer();
-            const civetResult = civetTransformer({
-                content: scriptInfo.content || '',
-                filename: document.getFilePath() || '',
-                options: { sourceMap: true },
-                attributes: scriptInfo.attributes
-            });
-            const tsSnippet = civetResult.code;
-            let civetMap = civetResult.map;
-
-            Logger.debug('[Civet preprocessSvelteFile - Civet Branch]', {
-                file: document.getFilePath(),
-                originalContentLength: scriptInfo.content?.length,
-                tsSnippetLength: tsSnippet.length,
-                hasCivetMap: !!civetMap,
-                mapSources: civetMap?.sources,
-                mapFile: civetMap?.file,
-            });
-            // Added debug: dump full Civet TS snippet
-            Logger.debug('[Civet Debug] Full civet TS snippet for ' + document.getFilePath() + ':\n' + tsSnippet);
-
-            // Build mapper from TS snippet back to Civet
-            if (civetMap) {
-                preprocessorMapper = new SourceMapDocumentMapper(
-                    new TraceMap(civetMap),
-                    urlToPath(document.uri)!
-                );
-            }
-
-            // Inject TS snippet into the full Svelte document for svelte2tsx
-            const original = text;
-            text =
-                original.substring(0, scriptInfo.container.start) +
-                `<script lang=\"ts\">` +
-                tsSnippet +
-                `</script>` +
-                original.substring(scriptInfo.container.end);
-
-            // continue to svelte2tsx branch instead of returning early
-        } catch (e) {
-            console.error('Error running Civet preprocessor in TS plugin:', e);
-        }
-    }
+    let preprocessorMapper: DocumentMapper | undefined = undefined;
 
     // Determine base scriptKind from attributes
     const autoScriptKind = [
@@ -254,9 +204,10 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
         : ts.ScriptKind.JS;
     // Override for Civet blocks: treat as TypeScript
     const scriptKind: ts.ScriptKind =
-        scriptInfo?.attributes.lang === 'civet' ? ts.ScriptKind.TS : autoScriptKind;
+        document.scriptInfo?.attributes.lang === 'civet' ? ts.ScriptKind.TS : autoScriptKind;
 
     try {
+        Logger.debug('[Civet Debug] Input text to svelte2tsx for ' + document.getFilePath() + ':\n' + text);
         const svelte2tsxResult = svelte2tsx(text, {
             parse: options.parse,
             version: options.version,
@@ -289,8 +240,7 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
 
         if (tsxMap) {
             tsxMap.sources = [document.uri];
-
-            const tsCheck = getTsCheckComment(scriptInfo?.content);
+            const tsCheck = getTsCheckComment(document.scriptInfo?.content);
             if (tsCheck) {
                 text = tsCheck + text;
                 nrPrependedLines = 1;
@@ -315,16 +265,7 @@ function preprocessSvelteFile(document: Document, options: SvelteSnapshotOptions
         text = scriptInfo ? scriptInfo.content : '';
     }
 
-    return {
-        tsxMap,
-        text,
-        exportedNames,
-        htmlAst,
-        parserError,
-        nrPrependedLines,
-        scriptKind,
-        preprocessorMapper
-    };
+    return { tsxMap, text, exportedNames, htmlAst, parserError, nrPrependedLines, scriptKind, preprocessorMapper };
 }
 
 /**
@@ -449,22 +390,8 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
     }
 
     getGeneratedPosition(pos: Position): Position {
-        Logger.debug('[Civet Debug] Mapping original position', pos, 'in', this.filePath);
-        // Raw svelte2tsx mapping (direct traceMap)
-        if (this.tsxMap) {
-            const rawMap = generatedPositionFor(
-                new TraceMap(this.tsxMap),
-                { line: pos.line + 1, column: pos.character, source: this.url }
-            );
-            if (rawMap) {
-                const rawPos: Position = { line: (rawMap.line || 0) - 1, character: rawMap.column || 0 };
-                Logger.debug('[Civet Debug] raw svelte2tsx mapping of original pos', rawPos, 'in', this.filePath);
-            } else {
-                Logger.debug('[Civet Debug] raw svelte2tsx mapping returned no mapping for', pos);
-            }
-        }
+        // Delegate to source-map based mapper for template and non-Civet parts
         const gen = this.getMapper().getGeneratedPosition(pos);
-        Logger.debug('[Civet Debug] Mapped to generated position', gen, 'in', this.filePath);
         return gen;
     }
 
@@ -538,6 +465,7 @@ export class SvelteDocumentSnapshot implements DocumentSnapshot {
             if (tsxStart && tsxEnd) {
                 snippetRegion = { start: tsxStart, end: tsxEnd };
             }
+            console.log(`[SvelteDocumentSnapshot] initMapper snippetRegion for ${this.filePath}:`, snippetRegion);
         }
         return new ConsumerDocumentMapper(
             new TraceMap(this.tsxMap),

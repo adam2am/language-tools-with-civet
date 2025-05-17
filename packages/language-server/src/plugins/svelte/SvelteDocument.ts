@@ -383,6 +383,11 @@ export class SvelteFragmentMapper implements PositionMapper {
  * Wrap preprocessors and rethrow on errors with more info on where the error came from.
  */
 function wrapPreprocessors(preprocessors: PreprocessorGroup | PreprocessorGroup[] = []) {
+    // Log the configured preprocessors for debugging
+    const names = Array.isArray(preprocessors)
+        ? preprocessors.map(p => p.name || 'unknown').join(', ')
+        : (preprocessors.name || 'unknown');
+    console.log(`[SvelteDocument] wrapPreprocessors: wrapping preprocessors: ${names}`);
     preprocessors = Array.isArray(preprocessors) ? preprocessors : [preprocessors];
     return preprocessors.map((preprocessor: any) => {
         const wrappedPreprocessor: PreprocessorGroup = { markup: preprocessor.markup };
