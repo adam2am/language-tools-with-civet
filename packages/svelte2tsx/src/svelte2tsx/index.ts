@@ -1,6 +1,7 @@
 import MagicString from 'magic-string';
 import { convertHtmlxToJsx, TemplateProcessResult } from '../htmlxtojsx_v2';
 import { parseHtmlx } from '../utils/htmlxparser';
+import { transformCivetSourceMap, registerCivetSourceMapLocations } from '../utils/sourcemap';
 import { addComponentExport } from './addComponentExport';
 import { createRenderFunction } from './createRenderFunction';
 import { ExportedNames } from './nodes/ExportedNames';
@@ -8,22 +9,30 @@ import { Generics } from './nodes/Generics';
 import { ImplicitStoreValues } from './nodes/ImplicitStoreValues';
 import { processInstanceScriptContent } from './processInstanceScriptContent';
 import { createModuleAst, ModuleAst, processModuleScriptTag } from './processModuleScriptTag';
-import path, { dirname, resolve } from 'path';
+import path from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
 
-/**
- * Dynamically load the Civet transformer to bypass package.json exports restrictions.
- */
-function getCivetTransformer(): any {
-  // @ts-ignore: dynamic require of Civet transformer
-  const civetPkgIndex = require.resolve('svelte-preprocess-with-civet');
-  const civetPkgDir = dirname(civetPkgIndex);
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { transformer } = require(resolve(civetPkgDir, 'transformers', 'civet.js'));
-  return transformer;
+
+let civetCompiler: any = null;
+function getCivetCompiler() {
+    if (civetCompiler) {
+        return civetCompiler;
+    }
+    try {
+        civetCompiler = require('@danielx/civet');
+        return civetCompiler;
+    } catch (e) {
+        // Make sure it's a module not found error for @danielx/civet
+        if (typeof e === 'object' && e !== null && (e as any).code === 'MODULE_NOT_FOUND' && (e as any).message?.includes('@danielx/civet')) {
+            throw new Error(
+                'svelte2tsx: Civet compiler not found. Please install "@danielx/civet" to use <script lang="civet">. ' +
+                'Run `npm install --save-dev @danielx/civet` or `yarn add --dev @danielx/civet`.'
+            );
+        }
+        throw e; // Re-throw other errors
+    }
 }
-const civetTransformer = getCivetTransformer();
 
 // Helper function to extract attribute value from Svelte AST attribute array
 function getAttributeValue(attributes: any[], attributeName: string): string | undefined {
@@ -117,20 +126,43 @@ export function svelte2tsx(
         const langAttr = getAttributeValue(moduleScriptTag.attributes, 'lang');
         if (langAttr === 'civet') {
             console.log('svelte2tsx: Civet module script detected via lang="' + langAttr + '"');
-            // Preprocess Civet module script
+            const civet = getCivetCompiler();
+            const svelteFilePath = options.filename || 'unknown.svelte';
+
             const civetContent = str.original.slice(moduleScriptTag.content.start, moduleScriptTag.content.end);
-            // @ts-ignore: assume synchronous Processed return
-            const { code: civetCode, map: civetMap } = civetTransformer({
-                content: civetContent,
-                filename: options.filename,
-                options: { sourceMap: true, inlineMap: false },
-                attributes: moduleScriptTag.attributes
-            } as any);
+            const civetResult = civet.compile(civetContent, {
+                filename: svelteFilePath, 
+                sync: true,
+                sourceMap: true,
+                inlineMap: false,
+                js: false
+            });
+            const civetCode = civetResult.code;
+            
             str.overwrite(moduleScriptTag.content.start, moduleScriptTag.content.end, civetCode);
-            // apply Civet→TS sourcemap to the replaced snippet
-            if (civetMap) {
-                // @ts-ignore: applySourceMap is a runtime MagicString method missing in type defs
-                str.applySourceMap(civetMap, options.filename, civetContent);
+            // If Civet returned a V3 source map, merge it into our MagicString map
+            if (civetResult.sourceMap && typeof civetResult.sourceMap.json === 'function') {
+                const v3Map = civetResult.sourceMap.json(
+                    svelteFilePath,
+                    `${svelteFilePath}.ts`
+                );
+                // Optionally tweak the Civet source map before registering
+                const tweakedMap = transformCivetSourceMap(
+                    v3Map,
+                    moduleScriptTag.content.start,
+                    moduleScriptTag.content.end,
+                    str.original,
+                    civetCode,
+                    svelteFilePath
+                );
+                // Register positions from this script for source mapping
+                registerCivetSourceMapLocations(
+                    tweakedMap,
+                    moduleScriptTag.content.start,
+                    moduleScriptTag.content.end,
+                    str.original,
+                    str
+                );
             }
         }
 
@@ -162,19 +194,43 @@ export function svelte2tsx(
         const langAttr = getAttributeValue(scriptTag.attributes, 'lang');
         if (langAttr === 'civet') {
             console.log('svelte2tsx: Civet instance script detected via lang="' + langAttr + '"');
-            // Preprocess Civet instance script
+            const civet = getCivetCompiler();
+            const svelteFilePath = options.filename || 'unknown.svelte';
+
             const civetContentInst = str.original.slice(scriptTag.content.start, scriptTag.content.end);
-            // @ts-ignore: assume synchronous Processed return
-            const { code: civetCodeInst, map: civetMapInst } = civetTransformer({
-                content: civetContentInst,
-                filename: options.filename,
-                options: { sourceMap: true, inlineMap: false },
-                attributes: scriptTag.attributes
-            } as any);
+            const civetResultInst = civet.compile(civetContentInst, {
+                filename: svelteFilePath,
+                sync: true,
+                sourceMap: true,
+                inlineMap: false,
+                js: false
+            });
+            const civetCodeInst = civetResultInst.code;
+            
             str.overwrite(scriptTag.content.start, scriptTag.content.end, civetCodeInst);
-            if (civetMapInst) {
-                // @ts-ignore: applySourceMap is a runtime method
-                str.applySourceMap(civetMapInst, options.filename, civetContentInst);
+            // If Civet returned a V3 source map, merge it into our MagicString map for instance script
+            if (civetResultInst.sourceMap && typeof civetResultInst.sourceMap.json === 'function') {
+                const v3Map = civetResultInst.sourceMap.json(
+                    svelteFilePath,
+                    `${svelteFilePath}.ts`
+                );
+                // Optionally tweak the Civet source map before registering
+                const tweakedMap = transformCivetSourceMap(
+                    v3Map,
+                    scriptTag.content.start,
+                    scriptTag.content.end,
+                    str.original,
+                    civetCodeInst,
+                    svelteFilePath
+                );
+                // Register positions from this script for source mapping
+                registerCivetSourceMapLocations(
+                    tweakedMap,
+                    scriptTag.content.start,
+                    scriptTag.content.end,
+                    str.original,
+                    str
+                );
             }
         }
 
