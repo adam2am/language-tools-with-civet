@@ -1,7 +1,7 @@
 import MagicString from 'magic-string';
 import { convertHtmlxToJsx, TemplateProcessResult } from '../htmlxtojsx_v2';
 import { parseHtmlx } from '../utils/htmlxparser';
-// import { transformCivetSourceMap, registerCivetSourceMapLocations } from '../utils/sourcemap'; // Removed as unused
+import { chainSourceMaps } from '../utils/sourcemap-chaining';
 import { addComponentExport } from './addComponentExport';
 import { createRenderFunction } from './createRenderFunction';
 import { ExportedNames } from './nodes/ExportedNames';
@@ -12,7 +12,6 @@ import { createModuleAst, ModuleAst, processModuleScriptTag } from './processMod
 import path from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
-// import { TraceMap } from '@jridgewell/trace-mapping'; // Keep for upcoming chaining - Commented out for build
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -73,6 +72,10 @@ function processSvelteTemplate(
     return convertHtmlxToJsx(str, htmlxAst, tags, options);
 }
 
+// Define unique markers
+const INSTANCE_SCRIPT_MARKER_START = `/*<!@#%^INSTANCE_SCRIPT_START%^#@!>*/`;
+const MODULE_SCRIPT_MARKER_START = `/*<!@#%^MODULE_SCRIPT_START%^#@!>*/`;
+
 export function svelte2tsx(
     svelte: string,
     options: {
@@ -90,6 +93,10 @@ export function svelte2tsx(
 ) {
     let civetModuleMapJson: any = null;
     let civetInstanceMapJson: any = null;
+    let markedInstanceScript = false;
+    let markedModuleScript = false;
+    let moduleScriptWasCivet = false; // Flag to indicate if module script was originally Civet
+    let instanceScriptWasCivet = false; // Flag to indicate if instance script was originally Civet
 
     options.mode = options.mode || 'ts';
     options.version = options.version || VERSION;
@@ -127,32 +134,46 @@ export function svelte2tsx(
     let instanceScriptTarget = 0;
 
     let moduleAst: ModuleAst | undefined;
+    let earlyProcessedModuleScript = false; // Flag to indicate early processing for Civet
 
     if (moduleScriptTag) {
         const langAttr = getAttributeValue(moduleScriptTag.attributes, 'lang');
         if (langAttr === 'civet') {
-            console.log('svelte2tsx: Civet module script detected via lang="' + langAttr + '"');
+            console.log('[svelte2tsx/index.ts] Civet module script detected. Performing early compilation.');
+            moduleScriptWasCivet = true; // Mark as originally Civet
             const civet = getCivetCompiler();
             const svelteFilePath = options.filename || 'unknown.svelte';
 
             const civetContent = str.original.slice(moduleScriptTag.content.start, moduleScriptTag.content.end);
             const civetResult = civet.compile(civetContent, {
-                filename: svelteFilePath, 
+                filename: svelteFilePath, // For Civet sourcemap to reference original svelte file
                 sync: true,
                 sourceMap: true,
                 inlineMap: false,
-                js: false
+                js: false // We want TS output
             });
-            const civetCode = civetResult.code;
+            let compiledCivetTs = civetResult.code;
             if (civetResult.sourceMap) {
                 civetModuleMapJson = civetResult.sourceMap.json();
+                if (
+                    civetModuleMapJson &&
+                    civetModuleMapJson.sources &&
+                    Array.isArray(civetModuleMapJson.sources) &&
+                    civetModuleMapJson.sources.length === 1 &&
+                    (civetModuleMapJson.sources[0] === null || civetModuleMapJson.sources[0] === undefined) &&
+                    civetModuleMapJson.sourcesContent &&
+                    Array.isArray(civetModuleMapJson.sourcesContent) &&
+                    civetModuleMapJson.sourcesContent.length === 1
+                ) {
+                    civetModuleMapJson.sources[0] = svelteFilePath; 
+                }
             }
-            
-            str.overwrite(moduleScriptTag.content.start, moduleScriptTag.content.end, civetCode);
-            // Removed transformCivetSourceMap and registerCivetSourceMapLocations calls
-            // Let MagicString handle mapping for the overwritten segment based on its default behavior.
-            // We might need to explicitly provide the Civet V3 map to MagicString if possible, 
-            // or chain it manually after svelte2tsx's map generation.
+            // IMPORTANT: Overwrite original Civet with compiled TS. Marker will be added later.
+            str.remove(moduleScriptTag.content.start, moduleScriptTag.content.end);
+            str.appendLeft(moduleScriptTag.content.start, compiledCivetTs);
+            console.log('[svelte2tsx/index.ts] Civet module script content removed and then TS appended (experimenting for granularity).');
+            // DO NOT set markedModuleScript or prepend marker here yet
+            earlyProcessedModuleScript = true; 
         }
 
         moduleAst = createModuleAst(str, moduleScriptTag);
@@ -182,25 +203,42 @@ export function svelte2tsx(
 
         const langAttr = getAttributeValue(scriptTag.attributes, 'lang');
         if (langAttr === 'civet') {
-            console.log('svelte2tsx: Civet instance script detected via lang="' + langAttr + '"');
+            console.log('[svelte2tsx/index.ts] Civet instance script detected. Performing early compilation.');
+            instanceScriptWasCivet = true; // Mark as originally Civet
             const civet = getCivetCompiler();
             const svelteFilePath = options.filename || 'unknown.svelte';
 
-            const civetContentInst = str.original.slice(scriptTag.content.start, scriptTag.content.end);
-            const civetResultInst = civet.compile(civetContentInst, {
-                filename: svelteFilePath,
+            // Content slice must be from the *original* string, before module script overwrite might change indices
+            const originalCivetContentInst = svelte.slice(scriptTag.content.start, scriptTag.content.end);
+
+            const civetResultInst = civet.compile(originalCivetContentInst, {
+                filename: svelteFilePath, // For Civet sourcemap
                 sync: true,
                 sourceMap: true,
                 inlineMap: false,
-                js: false
+                js: false // We want TS output
             });
-            const civetCodeInst = civetResultInst.code;
+            let compiledCivetTsInst = civetResultInst.code;
             if (civetResultInst.sourceMap) {
                 civetInstanceMapJson = civetResultInst.sourceMap.json();
+                if (
+                    civetInstanceMapJson &&
+                    civetInstanceMapJson.sources &&
+                    Array.isArray(civetInstanceMapJson.sources) &&
+                    civetInstanceMapJson.sources.length === 1 &&
+                    (civetInstanceMapJson.sources[0] === null || civetInstanceMapJson.sources[0] === undefined) &&
+                    civetInstanceMapJson.sourcesContent && 
+                    Array.isArray(civetInstanceMapJson.sourcesContent) &&
+                    civetInstanceMapJson.sourcesContent.length === 1
+                ) {
+                    civetInstanceMapJson.sources[0] = svelteFilePath;
+                }
             }
-            
-            str.overwrite(scriptTag.content.start, scriptTag.content.end, civetCodeInst);
-            // Removed transformCivetSourceMap and registerCivetSourceMapLocations calls
+            // IMPORTANT: Overwrite original Civet with compiled TS. Marker will be added later.
+            str.remove(scriptTag.content.start, scriptTag.content.end);
+            str.appendLeft(scriptTag.content.start, compiledCivetTsInst);
+            console.log('[svelte2tsx/index.ts] Civet instance script content removed and then TS appended (experimenting for granularity).');
+            // DO NOT set markedInstanceScript or prepend marker here yet
         }
 
         const res = processInstanceScriptContent(
@@ -247,9 +285,21 @@ export function svelte2tsx(
 
     // we need to process the module script after the instance script has moved otherwise we get warnings about moving edited items
     if (moduleScriptTag) {
+        // If Civet module script was processed and overwritten early, its content is now TS.
+        // The processModuleScriptTag function expects to find the original script content via moduleScriptTag offsets
+        // if it were to re-parse or re-analyze. However, createModuleAst already ran on the (potentially modified by overwrite) str.
+        // The main purpose of processModuleScriptTag is to handle $store syntax and hoist variables.
+        // If the content is now TS, $store syntax transformation might not be applicable or work as intended if it relies on Svelte-specific parsing.
+        // For now, let's assume createModuleAst and subsequent operations in processModuleScriptTag are compatible with the TS content.
+        if (earlyProcessedModuleScript) {
+            console.log('[svelte2tsx/index.ts] Skipping parts of processModuleScriptTag for early-processed Civet module script, or ensuring it runs on TS.');
+            // Potentially, processModuleScriptTag might need adjustments if it re-slices based on moduleScriptTag for original content.
+            // However, moduleAst was created *after* the overwrite for Civet, so its AST is of the TS code.
+        }
+
         processModuleScriptTag(
             str,
-            moduleScriptTag,
+            moduleScriptTag, // Still pass original tag for positions, but content in str is TS
             new ImplicitStoreValues(
                 implicitStoreValues.getAccessedStores(),
                 renderFunctionStart,
@@ -262,10 +312,6 @@ export function svelte2tsx(
                 exportedNames.hoistableInterfaces.analyzeModuleScriptNode(node)
             );
         }
-    }
-
-    if (moduleScriptTag && rootSnippets.length > 0) {
-        exportedNames.hoistableInterfaces.analyzeSnippets(rootSnippets);
     }
 
     if (moduleScriptTag || scriptTag) {
@@ -315,6 +361,21 @@ export function svelte2tsx(
         noSvelteComponentTyped: options.noSvelteComponentTyped
     });
 
+    // After all script content modifications by processInstanceScriptContent and processModuleScriptTag
+    // Prepend markers if the scripts were originally Civet
+
+    if (moduleScriptWasCivet && moduleScriptTag) {
+        str.prependLeft(moduleScriptTag.content.start, MODULE_SCRIPT_MARKER_START);
+        markedModuleScript = true;
+        console.log('[svelte2tsx/index.ts] Module script marker prepended AFTER all processing.');
+    }
+
+    if (instanceScriptWasCivet && scriptTag) {
+        str.prependLeft(scriptTag.content.start, INSTANCE_SCRIPT_MARKER_START);
+        markedInstanceScript = true;
+        console.log('[svelte2tsx/index.ts] Instance script marker prepended AFTER all processing.');
+    }
+
     if (options.mode === 'dts') {
         // Prepend the import which is used for TS files
         // The other shims need to be provided by the user ambient-style,
@@ -326,6 +387,8 @@ export function svelte2tsx(
             str.prepend('import { SvelteComponentTyped } from "svelte"\n' + '\n');
         }
         let code = str.toString();
+        if (markedInstanceScript) code = code.replace(INSTANCE_SCRIPT_MARKER_START, '');
+        if (markedModuleScript) code = code.replace(MODULE_SCRIPT_MARKER_START, '');
         // Remove all tsx occurences and the template part from the output
         code = code
             // prepended before each script block
@@ -340,20 +403,110 @@ export function svelte2tsx(
         };
     } else {
         str.prepend('///<reference types="svelte" />\n');
-        const finalMagicStringMap = str.generateMap({ hires: true, source: options?.filename });
+        let finalMap = str.generateMap({ hires: true, source: options?.filename });
+        
+        const generatedCodeWithMarkers = str.toString();
+        let generatedCodeClean = generatedCodeWithMarkers;
+        let finalCodeToReturn = generatedCodeClean;
+
+        let instanceTsCodeStartInClean = -1;
+        let moduleTsCodeStartInClean = -1;
+
+        // Order of removal and index adjustment matters if both markers are present.
+        // Find indices in the string *with* markers first.
+        const rawInstanceMarkerIndex = markedInstanceScript ? generatedCodeWithMarkers.indexOf(INSTANCE_SCRIPT_MARKER_START) : -1;
+        const rawModuleMarkerIndex = markedModuleScript ? generatedCodeWithMarkers.indexOf(MODULE_SCRIPT_MARKER_START) : -1;
+
+        if (rawInstanceMarkerIndex !== -1) {
+            generatedCodeClean = generatedCodeClean.replace(INSTANCE_SCRIPT_MARKER_START, '');
+            instanceTsCodeStartInClean = rawInstanceMarkerIndex;
+            // If module marker was after instance marker, its index in the clean string will be shifted.
+            if (rawModuleMarkerIndex !== -1 && rawModuleMarkerIndex > rawInstanceMarkerIndex) {
+                moduleTsCodeStartInClean = rawModuleMarkerIndex - INSTANCE_SCRIPT_MARKER_START.length;
+            } else {
+                moduleTsCodeStartInClean = rawModuleMarkerIndex; // Stays same or is -1
+            }
+        } else {
+            // Instance marker not found, module marker index is its raw index.
+            moduleTsCodeStartInClean = rawModuleMarkerIndex;
+        }
+        
+        // If instance marker wasn't found or module marker was first, and module marker is present.
+        if (rawInstanceMarkerIndex === -1 && rawModuleMarkerIndex !== -1) { 
+             generatedCodeClean = generatedCodeClean.replace(MODULE_SCRIPT_MARKER_START, '');
+             // instanceTsCodeStartInClean remains -1
+        } else if (rawModuleMarkerIndex !== -1 && rawInstanceMarkerIndex !== -1 && rawModuleMarkerIndex < rawInstanceMarkerIndex) {
+            // Module marker was first and instance marker was second
+            generatedCodeClean = generatedCodeClean.replace(MODULE_SCRIPT_MARKER_START, ''); // Already removed if instance was first and module second
+            // instanceTsCodeStartInClean needs adjustment because module marker was removed before it
+            instanceTsCodeStartInClean = rawInstanceMarkerIndex - MODULE_SCRIPT_MARKER_START.length;
+            // moduleTsCodeStartInClean was already set correctly relative to raw
+        }
+        // If only instance marker was found and removed, generatedCodeClean is already updated, moduleTsCodeStartInClean is -1 or its raw index.
+        // If both were found and instance was first, generatedCodeClean had instance marker removed, then moduleTsCodeStartInClean was adjusted.
+        //    Now, ensure module marker is also removed from generatedCodeClean if it hasn't been (e.g. if it was the second marker to be removed conceptually).
+        if (markedModuleScript && generatedCodeClean.includes(MODULE_SCRIPT_MARKER_START)) { // Ensure it's removed if it was present
+            generatedCodeClean = generatedCodeClean.replace(MODULE_SCRIPT_MARKER_START, '');
+        }
+
+        finalCodeToReturn = generatedCodeClean;
+
+        if (!markedInstanceScript && rawInstanceMarkerIndex !== -1) console.warn("Svelte2tsx: Instance script marker found but not markedInstanceScript?");
+        if (!markedModuleScript && rawModuleMarkerIndex !== -1) console.warn("Svelte2tsx: Module script marker found but not markedModuleScript?");
+
+        // ---- START DIAGNOSTIC LOGS FOR CHAINING CONDITIONS ----
+        console.log('[svelte2tsx/index.ts DEBUG CHAIN_COND] About to check chaining conditions.');
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] civetInstanceMapJson: ${!!civetInstanceMapJson}`);
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] scriptTag: ${!!scriptTag}`);
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] markedInstanceScript: ${markedInstanceScript}`);
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] instanceTsCodeStartInClean: ${instanceTsCodeStartInClean}`);
+        
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] civetModuleMapJson: ${!!civetModuleMapJson}`);
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] moduleScriptTag: ${!!moduleScriptTag}`);
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] markedModuleScript: ${markedModuleScript}`);
+        console.log(`[svelte2tsx/index.ts DEBUG CHAIN_COND] moduleTsCodeStartInClean: ${moduleTsCodeStartInClean}`);
+        // ---- END DIAGNOSTIC LOGS FOR CHAINING CONDITIONS ----
 
         if (civetModuleMapJson || civetInstanceMapJson) {
-            console.log('svelte2tsx: Civet Module Script V3 Map JSON:', JSON.stringify(civetModuleMapJson, null, 2));
-            console.log('svelte2tsx: Civet Instance Script V3 Map JSON:', JSON.stringify(civetInstanceMapJson, null, 2));
-            console.log('svelte2tsx: Final MagicString V3 Map JSON (potentially including Civet sections):', JSON.stringify(finalMagicStringMap, null, 2));
+            try {
+                if (civetInstanceMapJson && scriptTag && markedInstanceScript && instanceTsCodeStartInClean !== -1) {
+                    const chainedMap = chainSourceMaps(
+                        finalMap as any,
+                        civetInstanceMapJson as any,
+                        scriptTag.content.start,
+                        scriptTag.content.end,
+                        instanceTsCodeStartInClean,
+                        svelte,
+                        generatedCodeClean
+                    );
+                    console.log("[svelte2tsx/index.ts] Instance script chained map successfully.");
+                    return { code: finalCodeToReturn, map: chainedMap, exportedNames: exportedNames.getExportsMap(), events: events.createAPI(), htmlAst };
+                }
+
+                if (civetModuleMapJson && moduleScriptTag && markedModuleScript && moduleTsCodeStartInClean !== -1 && !(civetInstanceMapJson && scriptTag && markedInstanceScript && instanceTsCodeStartInClean !== -1) ) {
+                    const chainedMap = chainSourceMaps(
+                        finalMap as any,
+                        civetModuleMapJson as any,
+                        moduleScriptTag.content.start,
+                        moduleScriptTag.content.end,
+                        moduleTsCodeStartInClean,
+                        svelte,
+                        generatedCodeClean
+                    );
+                    console.log("[svelte2tsx/index.ts] Module script chained map successfully.");
+                    return { code: finalCodeToReturn, map: chainedMap, exportedNames: exportedNames.getExportsMap(), events: events.createAPI(), htmlAst };
+                }
+                console.log ('[svelte2tsx/index.ts] Civet map(s) present, but not chained due to marker issues or conditions not met. Returning original MagicString map.'); // Clarified log message
+            } catch (e: any) {
+                console.error('svelte2tsx: Error during Civet sourcemap chaining attempt:', e.message, e.stack);
+            }
         }
 
         return {
-            code: str.toString(),
-            map: finalMagicStringMap,
+            code: finalCodeToReturn,
+            map: finalMap,
             exportedNames: exportedNames.getExportsMap(),
             events: events.createAPI(),
-            // not part of the public API so people don't start using it
             htmlAst
         };
     }
