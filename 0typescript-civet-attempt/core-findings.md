@@ -146,14 +146,47 @@ Desired flow: Svelte with <script lang="civet"> → svelte2tsx (inside it: Civet
         *   **Limitation:** The current `chainSourceMaps` cannot create column precision that isn't present in its input `baseMapPayload` for the script section (when that `baseMapPayload` is the result of `MagicString.overwrite()`).
     *   **Refined Strategy: Multi-Stage Sourcemap Generation & Combination (Most Robust):**
         *   This approach aims to generate a `baseMapPayload` that *is* granular for the script content.
-        *   [] - **Stage A (Civet script -> TS script snippet):**
+        *   [~] - **Stage A (Civet script -> TS script snippet):**
             *   Isolate original Civet script content.
             *   Compile it to a TS snippet using `@danielx/civet`.
+                Crucially, apply the sources[0] patch we perfected in the micro-test: If sources[0] is null, set it to the Svelte component's filename. This ensures the civet_to_ts_map correctly references the original Svelte file. Store this patched V3 map.
+                Store the start/end offsets of the original Civet script within the Svelte file, and the start offset of this new TS snippet (this will be important for Stage C).
             *   Obtain the precise sourcemap (`civet_to_ts_map`) for *this transformation only*. **This map is known to be accurate and granular (lines and columns) per `[63log]`. Ensure `sources[0]` is patched here if necessary.**
+                      Stage A (already mostly done):
+                      Get Civet content.
+                      Compile to TS (compiledCivetTs).
+                      Get and patch civetModuleMapJson / civetInstanceMapJson.
         *   [] - **Stage B (Svelte with *embedded TS script* -> Final TSX):**
             *   **Crucial Change:** Instead of using `str.overwrite()` to replace the Civet script with TS *late* in the process, construct an *intermediate version of the Svelte content*. In this intermediate version, the original Civet script block is already replaced by the compiled TS snippet from Stage A.
             *   Process this intermediate Svelte content (which now has standard TypeScript in its `<script>` tags) using the existing `MagicString`-based Svelte-to-TSX transformation logic in `svelte2tsx`.
             *   Generate a sourcemap (`svelte_with_ts_to_tsx_map`) for *this transformation*. The hypothesis is that `MagicString` will produce more granular mappings for the script section because the TS code is part of its "original" input for this stage, not content introduced via `overwrite()`. This map relates lines/columns in the "Svelte with embedded TS" to lines/columns in the final TSX.
+                      Strategy for Stage B (Iterative Implementation):
+                      Prepare svelteContentForProcessing:
+                      We'll introduce a variable svelteContentForProcessing, initialized with the original svelte input.
+                      We'll perform a preliminary parse of the original svelte string to find script tags and identify if they are Civet.
+                      If a Civet module script is found:
+                      Compile it to TS (this is Stage A, largely existing). Store the compiledCivetTs and the patched civetModuleMapJson.
+                      Use a temporary MagicString instance initialized with svelteContentForProcessing to replace the content of the Civet module script with compiledCivetTs.
+                      Update svelteContentForProcessing with the result of tempMagicString.toString().
+                      If a Civet instance script is found:
+                      Compile it to TS (Stage A). Store compiledCivetTsInst and patched civetInstanceMapJson.
+                      Use a new temporary MagicString instance initialized with the current svelteContentForProcessing (which might already have the module script replaced) to replace the Civet instance script content with compiledCivetTsInst.
+                      Update svelteContentForProcessing again.
+                      Main MagicString Initialization:
+                      The main str = new MagicString(...) will now be initialized with this svelteContentForProcessing.
+                      Adapt Script Processing:
+                      The processSvelteTemplate function (which calls parseHtmlx) will now operate on str (which is based on svelteContentForProcessing). The moduleScriptTag and scriptTag objects it returns will have offsets relative to this processed content.
+                      The old logic that did str.remove(moduleScriptTag.content.start, ...).appendLeft(..., compiledCivetTs) for Civet scripts will be removed, as the content is already TypeScript.
+                      Marker Injection:
+                      The MODULE_SCRIPT_MARKER_START and INSTANCE_SCRIPT_MARKER_START will still be prepended if moduleScriptWasCivet or instanceScriptWasCivet is true. This will be done using str.prependLeft() at moduleScriptTag.content.start or scriptTag.content.start respectively. These scriptTag objects are now the ones parsed from svelteContentForProcessing.
+                      chainSourceMaps Call:
+                      When chainSourceMaps is called for a Civet script:
+                      The baseMapPayload (finalMap) is now the map from "Svelte-with-embedded-TS" to final TSX.
+                      The civetMap (either civetModuleMapJson or civetInstanceMapJson) is the Civet-to-TS map from Stage A.
+                      The scriptStart and scriptEnd arguments will be moduleScriptTag.content.start and moduleScriptTag.content.end (or for instance script) from the tags parsed out of svelteContentForProcessing. These define the range of the TS code within svelteContentForProcessing.
+                      The originalContent argument passed to chainSourceMaps must now be svelteContentForProcessing (for Civet cases). For non-Civet cases, it remains the original svelte string (or rather, the baseMapPayload would be derived from original svelte so it aligns). This needs careful conditional handling.
+                      Actually, the originalContent for chainSourceMaps should be the content that baseMapPayload.sourcesContent[0] refers to. If baseMapPayload is generated from str (which is based on svelteContentForProcessing), then originalContent should be svelteContentForProcessing. This seems consistent.
+                      tsCodeStart remains the offset in the final generated TSX
         *   [] - **Stage C (True Chaining/Stitching):**
             *   Combine `civet_to_ts_map` (from Stage A) and `svelte_with_ts_to_tsx_map` (from Stage B).
             *   To map from final TSX back to original Civet:
@@ -176,10 +209,139 @@ Desired flow: Svelte with <script lang="civet"> → svelte2tsx (inside it: Civet
         2.  Ensure `DocumentMapper` correctly maps positions using the chained map
         3.  Test language features with Civet code to verify correct mapping
 
+User concern (further): when syntax of a civet is wrong, how its affecting a map chain 
 
-# History-log:
+# History-log + where we at, where we heading and dealing with, what do we even do here:
 
 ## Read-only milestones bellow after being written (freshest=up, historically=down):
+
+### [67log]
+The remaining steps are purely about column-level precision, which we know can only be as good as the granularity of the base map plus the Civet map. Given MagicString's overwrite() coarseness, you'll need the two-stage strategy we sketched (“Stage A: isolated Civet compile; Stage B: embed the compiled TS into the original input before doing the Svelte-to-TSX pass") if you want truly token-precise column numbers.
+But short of that full refactor, the immediate next step really is just introspecting exactly what chainSourceMaps is doing for each segment—hence why looking at those debug logs (or running a tiny, dedicated micro-test of chainSourceMaps in isolation) is the right move now.
+
+**Overall Goal:** Integrate Civet language support into `svelte2tsx`, focusing on accurate sourcemap generation. The aim is a unified sourcemap chain: Original Civet -> Intermediate TS (from Civet compiler) -> Final TSX (from `svelte2tsx`). This is critical for IDE features like "Go to Definition" and diagnostics.
+
+**Current Status & Key Findings:**
+
+*   **Civet Compilation in `svelte2tsx`:** Successfully integrated `@danielx/civet` directly into `svelte2tsx/index.ts` to handle `<script lang="civet">` for both module and instance scripts.
+*   **Sourcemap Chaining Utility:** The `chainSourceMaps` function (`src/utils/sourcemap-chaining.ts`) is responsible for combining the Civet-to-TS sourcemap with the Svelte-to-TSX sourcemap (generated by MagicString).
+*   **Marker Strategy for TS Code Start:** Implemented unique string markers in `svelte2tsx/index.ts` (`INSTANCE_SCRIPT_MARKER_START`, `MODULE_SCRIPT_MARKER_START`) to precisely locate the beginning of Civet-compiled TypeScript within the final generated TSX. This `tsCodeStart` is vital for `chainSourceMaps`.
+*   **Module Script Sourcemaps: SUCCESS!** The `stage_b_chaining_complex_test.mjs` now reports "MATCH!" for all module script query points. The line and column mappings from TSX back to the original Civet in the module script are correct.
+*   **Instance Script Sourcemaps: PRIMARY CHALLENGE.**
+    *   **Conditional Block Entry Confirmed:** We've verified (through extensive logging, including forcing a crash) that the `if` block in `svelte2tsx/index.ts` that calls `chainSourceMaps` for instance scripts *is* being entered. All necessary conditions (`civetInstanceMapJson`, `instanceScriptWasCivet`, `scriptTag`, `instanceTsCodeStartInClean !== -1`) are evaluating to true.
+    *   **Off-by-One Line Error for Instance Scripts:** The latest detailed debugging for TSX Line 23 (targeting `instanceVar` definition) in `chainSourceMaps` revealed the following:
+        *   `origSveltePos_from_segment` (from the base Svelte-to-TSX map) was coarse, mapping to the start of the Svelte instance script tag (e.g., `L23C0`).
+        *   `scriptStartPos` (start of instance script in original Svelte) was `L23C0`.
+        *   `tsCodeStartPos` (start of compiled Civet-TS for instance script in final TSX) was `L23C0`.
+        *   `currentTsxPos` (the TSX position being queried, e.g., `L23C8` for `instanceVar`) was correct.
+        *   `posInIntermediateTs` (calculated for input to `civetMap.originalPositionFor`) was correct (e.g., `L1C8` relative to the start of the Civet-compiled TS).
+        *   `civetSourcePos` (output from `civetMap.originalPositionFor`, e.g., `L2C2` relative to Civet instance script content) was correct.
+        *   `scriptContentStartLineInOriginalFile` (1-based line where instance Civet script content begins in the original Svelte file) was correctly passed (e.g., `24`).
+        *   The calculation `finalOriginalLine_0based = (scriptContentStartLineInOriginalFile - 1) + (civetSourcePos.line - 1)` resulted in the correct 0-based line (e.g., `(24-1) + (2-1) = 23 + 1 = 24`).
+        *   However, the final test log (`stage-b-chaining-complex-test.log`) showed the mapped original line as `L25` when `L24` was expected (an off-by-one error for the 1-based line).
+
+**Where We Are Heading / Immediate Next Steps:**
+
+1.  **Pinpoint & Fix Instance Script Off-by-One Line Error:**
+    *   The discrepancy lies between the correct 0-based calculation (`finalOriginalLine_0based = 24`) and the 1-based output in the test log (`L25` instead of `L24`).
+    *   Investigate how the 0-based `finalOriginalLine_0based` and `civetSourcePos.column` are used to form the `newSegmentData` in `chainSourceMaps.ts`.
+    *   The `newSegmentData` expects 0-based lines and columns. The current segment creation is `[genCol, sourceIndex, finalOriginalLine_0based, civetSourcePos.column]`. This seems correct.
+    *   The issue might be in how `originalPositionFor` from `@jridgewell/trace-mapping` (used in the test script) interprets or reports these 0-based values when converting them back to 1-based for display, or if there's a subtle 0-based vs 1-based mismatch in how `scriptContentStartLineInOriginalFile` is used by `chainSourceMaps` vs. how the test expects it.
+    *   The test script's `originalPositionFor` returns 1-based lines. If `finalOriginalLine_0based` is `24`, `originalPositionFor` should return `line: 25`. The test expected `line: 24`. This implies the *expected* value in the test, or the `scriptContentStartLineInOriginalFile` logic, might be the source of the off-by-one.
+    *   Re-examine the `expected` values in `stage_b_chaining_complex_test.mjs` for instance scripts, ensuring they accurately reflect the 1-based line numbers in the original `.svelte` file.
+    *   Double-check the `scriptContentStartLineInOriginalFile` logic in `svelte2tsx/index.ts` for instance scripts.
+
+2.  **Verify & Systematically Correct Instance Script `queryPoints`:** Once the off-by-one issue is understood and resolved, meticulously re-verify and correct all `tsxLine`, `tsxColumn`, and `expected` line/column values for *all* instance script `queryPoints` in `stage_b_chaining_complex_test.mjs`.
+
+3.  **Clean Up Logging:** Remove or comment out extensive `DEBUG_TSX_L*` and other temporary verbose logging from `svelte2tsx/index.ts` and `chainSourceMaps.ts`.
+
+4.  **Further Testing (Stretch Goal):** Consider adding more diverse Svelte/Civet test cases (e.g., components with only instance scripts, empty Civet scripts, scripts with only comments, more interactions between template and script if they could affect sourcemaps).
+
+5.  **Ultimate Goal:** Achieve consistent "MATCH!" for all query points in all tests, ensuring robust and accurate sourcemapping for Civet within Svelte components.
+
+### [66log]
+
+**Debugging Instance Script Sourcemap Chaining & The Build Process Breakthrough:**
+
+*   **Problem Context:** While module script sourcemap chaining was showing promise (correct lines, `column:0` issue), the instance script sourcemaps appeared not to be chaining at all in the complex test case (`stage_b_chaining_complex_test.mjs`). Our diagnostic logs intended for `svelte2tsx/index.ts` were not appearing in the test output.
+
+*   **Debugging Journey & Key Steps:**
+    1.  **Extensive Logging:** Added detailed `console.log` statements within `svelte2tsx/index.ts` around the logic for processing instance scripts, specifically targeting the conditions (`civetInstanceMapJson`, `instanceScriptWasCivet`, `scriptTag`, `instanceTsCodeStartInClean`) that control whether `chainSourceMaps` is called for the instance script.
+    2.  **Console Output Redirection:** Modified `stage_b_chaining_complex_test.mjs` to redirect all `console.log`, `console.error`, and `console.warn` outputs to a dedicated debug file (`complex_test_console.debug.log`). This was crucial for capturing logs from the internally-invoked `svelte2tsx` logic.
+    3.  **The "Aha!" Moment - Rebuilding `svelte2tsx`:** Realized that changes to `svelte2tsx/index.ts` (a TypeScript file) were not being reflected in the test runs because the `svelte2tsx` package was not being rebuilt. The test script was consuming the previously built JavaScript version (`index.mjs`).
+    4.  **Build Command:** Identified and used `pnpm --filter svelte2tsx build` (from the workspace root `ltools-backup/`) to rebuild the `svelte2tsx` package. This uses Rollup as specified in its `package.json`.
+    5.  **Log Confirmation:** After rebuilding, our diagnostic logs from `svelte2tsx/index.ts` *finally* started appearing in the `complex_test_console.debug.log` file. We confirmed this by adding a very distinct log message just before the `if` condition for instance script chaining, which then appeared as expected.
+    6.  **Log Consolidation:** Refined the logging in `svelte2tsx/index.ts` to consolidate the multiple condition checks for instance script chaining into a single, comprehensive `console.log` statement for easier analysis.
+
+*   **Current Status:**
+    *   We have successfully rebuilt the `svelte2tsx` package with the latest diagnostic logging.
+    *   The `stage_b_chaining_complex_test.mjs` has been run, and its full console output (including logs from `svelte2tsx`) is captured in `ltools-backup/packages/svelte2tsx/test/stage_b_output/complex_test_console.debug.log`.
+    *   The immediate next step is to meticulously examine this `complex_test_console.debug.log` file to observe the logged values of the four conditions governing instance script sourcemap chaining. This will tell us whether the conditions are being met and, if not, which one is failing, or if chaining is now occurring correctly for instance scripts as well.
+
+
+### [65log]
+
+**Sourcemap Chaining Progress & Current Status (Post-Marker Strategy & Refined `chainSourceMaps`):**
+
+*   **Integration Point:** Civet compilation (`@danielx/civet`) is now directly integrated into `svelte2tsx/index.ts` for `<script lang="civet">` tags (both module and instance).
+*   **Sourcemap Generation:**
+    *   Civet compiler generates a sourcemap from Civet to intermediate TypeScript (`civetModuleMapJson`, `civetInstanceMapJson`).
+    *   `MagicString` (used by `svelte2tsx`) generates a base map from the Svelte file (containing the *intermediate* TS) to the final TSX.
+*   **Sourcemap Chaining (`chainSourceMaps` utility):**
+    *   The refined `chainSourceMaps` function takes the `baseMapPayload` (Svelte to TSX) and the `civetMap` (Civet to intermediate TS).
+    *   It iterates through segments of the `baseMapPayload`. If a segment maps back to the original Svelte Civet script range:
+        1.  The TSX position (`currentTsxPos`) is determined.
+        2.  `tsCodeStart` (the starting line/column of the Civet-compiled TS block within the *final generated TSX*) is used to calculate the position of `currentTsxPos` relative to this block (`posInIntermediateTs`). This `tsCodeStart` is accurately found using unique string markers injected before Civet-TS `overwrite` and located in the final generated code.
+        3.  `civetMap.originalPositionFor(posInIntermediateTs)` is used to find the original position in the Civet code.
+        4.  An adjustment is made using `scriptContentStartLineInOriginalFile` to ensure the line number is relative to the start of the Svelte file, not just the Civet script block.
+*   **Test Results (`stage_b_chaining_test.mjs`):**
+    *   **Line Number Accuracy:** Mappings from the final TSX back to the original `.svelte` file now correctly identify the line number within the Civet code.
+    *   **Column Number Issue:** Mapped column numbers are consistently `0` for the correct line. This means "Go to Definition" will land on the correct line, but at the very beginning.
+    *   **`test/civet_compiler_output.log`:** Analysis of this log (raw output from `@danielx/civet`) is the next step to understand the granularity of the Civet compiler's own sourcemap. It's suspected the Civet sourcemap itself might only provide line-level or start-of-statement mappings, or that `@jridgewell/trace-mapping`'s `originalPositionFor` with its default bias contributes to this.
+*   **Overall:** Significant progress has been made. Line-level mapping is a major step forward. The primary remaining challenge for precise "Go to Definition" is resolving the column mapping.
+
+**Next Steps:**
+1.  Analyze `test/civet_compiler_output.log` to confirm the detail level of the raw Civet sourcemap.
+2.  Investigate if different biases (`LEAST_UPPER_BOUND`) for `originalPositionFor` in `chainSourceMaps` might improve column accuracy, assuming the Civet map has the necessary detail.
+3.  Integrate more complex Civet scenarios into the test suite to ensure robustness.
+
+
+This feels like we're very close to understanding the line number discrepancy.Okay, this is a significant finding! The discrepancy in scriptContentStartLineInOriginalFile (logged as 2 inside chainSourceMaps when we expect it to be 3 based on the Svelte file structure and the calculation logic for moduleCivetContentStartLineInOriginalSvelte) is very likely the primary cause of the consistent one-line offset in mappings for the module script.
+This is GREAT! moduleCivetContentStartLineInOriginalSvelte is correctly 3 when being passed from svelte2tsx/index.ts.
+Now searching for the scriptContentStartLineInOriginalFile log from within chainSourceMaps for the TSX L9C10 segment
+
+BINGO!
+[DEBUG_TSX_L9] scriptContentStartLineInOriginalFile (1-based Svelte): 3
+It is now 3 inside chainSourceMaps as well! This means the parameter passing is correct.
+Now let's look at the finalOriginalLine_0based calculation with this corrected value:
+[DEBUG_TSX_L9] finalOriginalLine_0based (for new segment): 8
+This is calculated as: (scriptContentStartLineInOriginalFile_1_based - 1) + (civetSourcePos.line_1_based - 1)
+Using the values from the log:
+(3 - 1) + (7 - 1) = 2 + 6 = 8.
+
+
+### [64log]
+Let's re-examine the inputs to chainSourceMaps and its internal logic.
+Key inputs to chainSourceMaps:
+baseMapPayload: Map from Svelte-with-TS (intermediate) to TSX. Its sourcesContent should be svelteContentForProcessing.
+civetMap: Map from Civet to TS. Its sourcesContent should be the original Civet snippet. Its sources should be patched to svelteFilePath.
+scriptStart, scriptEnd: Offsets of the original Civet script block within the original Svelte file string.
+tsCodeStart: Offset of the compiled TS (from Civet) within the final generated TSX string.
+originalContent: This is svelteContentForProcessing when we call chainSourceMaps.
+generatedContent: This is the final TSX string.
+Inside chainSourceMaps:
+civetTraceMap = new TraceMap(civetMap)
+chainedMap.sources = baseMapPayload.sources (e.g., ['myFile.svelte'])
+chainedMap.sourcesContent = baseMapPayload.sourcesContent (this should be svelteContentForProcessing)
+It iterates through segments of baseMapPayload.mappings.
+If a segment from baseMapPayload maps to a Svelte position (origSveltePos_from_segment) that falls within the range of the original Civet script (defined by scriptStartPos and scriptEndPos, which are calculated from originalContent = svelteContentForProcessing), then it tries to map through Civet.
+posInIntermediateTs is calculated: this is the position in the Civet-compiled-TS, relative to where that TS block starts in the final TSX (tsCodeStartPos).
+civetSourcePos = originalPositionFor(civetTraceMap, posInIntermediateTs): This queries the Civet map. civetTraceMap uses civetMap.sourcesContent (original Civet snippet) to resolve line/column. So civetSourcePos.line and civetSourcePos.column are relative to the start of that original Civet snippet.
+The new segment is [genCol, sourceIndex, civetSourcePos.line - 1, civetSourcePos.column].
+The issue might be in step 3 or how originalPositionFor interacts with the chainedMap in the test script.
+
+
+
 
 ### [63log] - Detailed Micro-Test (`civet_tracemap_query_test.mjs`) Findings & Conclusions
 
@@ -870,4 +1032,43 @@ All of our **isolated** tests (hover, definition, diagnostics) now pass under Mo
   • Created `manual-civet-run.mjs` in `packages/svelte2tsx/test/` to directly execute `svelte2tsx` on a local `civet-e2e.svelte` file.
   • Successfully ran `manual-civet-run.mjs` after resolving import/build issues (adding `createRequire` to `svelte2tsx`, building the package).
   • The script outputted the JSON for the Civet instance script's V3 map and the final MagicString V3 map. This completes data collection for analyzing MagicString's default mapping for overwritten Civet code, paving the way for Step 6 (implementing post-hoc chaining).
+
+### [68log]
+**Overall Goal:** Integrate Civet language support into `svelte2tsx`, focusing on accurate sourcemap generation. The aim is a unified sourcemap chain: Original Civet -> Intermediate TS (from Civet compiler) -> Final TSX (from `svelte2tsx`). This is critical for IDE features like "Go to Definition" and diagnostics.
+
+**Current Status & Key Findings (Stage B Implementation):**
+
+*   **Stage A/B Architecture in `svelte2tsx/index.ts`:**
+    *   **Preliminary Parse:** The original Svelte content is parsed once to identify Civet script tags (`preliminaryModuleScriptTag`, `preliminaryInstanceScriptTag`) and calculate their original content start lines (`moduleCivetContentStartLineInOriginalSvelte`, `instanceCivetContentStartLineInOriginalSvelte`) using `getActualContentStartLine`.
+    *   **Civet to TS Compilation (Stage A):** If Civet scripts are found, their content is extracted from the *original* Svelte string, compiled to TypeScript using `@danielx/civet`, and the resulting TS code and V3 sourcemap (`civetModuleMapJson`, `civetInstanceMapJson`) are stored. The Civet V3 map's `sources[0]` is patched to `svelteFilePath` if initially `null` or `undefined`.
+    *   **Intermediate Svelte Content (Stage B):** A new string, `svelteContentForProcessing`, is created. The compiled TS from Stage A is written into this string, replacing the original Civet script content. This is done sequentially for module then instance scripts, meaning instance script replacement operates on content potentially already modified by module script replacement.
+    *   **Main Processing:** `MagicString` is initialized with `svelteContentForProcessing`. All subsequent parsing (`parseHtmlx`) and transformations by `svelte2tsx` operate on this intermediate Svelte content (which now contains TS in its script tags).
+    *   **Marker Injection:** Unique markers (`MODULE_SCRIPT_MARKER_START`, `INSTANCE_SCRIPT_MARKER_START`) are prepended to the start of the (now TS) script content within `str` (the MagicString instance based on `svelteContentForProcessing`).
+    *   **Sourcemap Generation:**
+        *   `baseMapPayload`: Generated by `str.generateMap()`. This map is from `svelteContentForProcessing` (Svelte-with-embedded-TS) to the final TSX.
+        *   `finalCodeToReturn`: The final TSX string after markers are removed.
+        *   `tsCodeStartInClean`: Offsets of the (formerly Civet) TS blocks in `finalCodeToReturn` are calculated by finding markers in `generatedCodeWithMarkers` and adjusting for marker removal.
+*   **Sourcemap Chaining (`chainSourceMaps` utility):**
+    *   Called with `baseMapPayload` and the respective `civetMap`.
+    *   `originalContent` argument to `chainSourceMaps` is `svelteContentForProcessing`.
+    *   `scriptStart`/`scriptEnd` arguments are offsets from the script tags parsed out of `svelteContentForProcessing`.
+    *   `scriptContentStartLineInOriginalFile` is the pre-calculated value based on the *original* Svelte file (e.g., `instanceCivetContentStartLineInOriginalSvelte`).
+*   **`getLineAndColumnForOffset` and `getActualContentStartLine`:**
+    *   After extensive debugging, including replacing `getLineAndColumnForOffset` with an iterative version and adding detailed logging, it was found that `getLineAndColumnForOffset` was consistently returning line `22` for an offset (`searchOffset: 621`) that clearly pointed to a character on line `23` of the original Svelte content string. This was the root cause of the `scriptContentStartLineInOriginalFile` being `22` instead of the expected `23` for the instance script in `stage_b_chaining_complex_test.mjs`.
+    *   This off-by-one in line calculation directly impacted the final chained sourcemap, causing a consistent one-line error in mappings.
+
+**Where We Are Heading / Immediate Next Steps:**
+
+1.  **Fix `getLineAndColumnForOffset` (or its usage/inputs):**
+    *   **Priority 1:** The primary unresolved issue is why `getLineAndColumnForOffset` (both versions) returns an incorrect line number (e.g., 22) for an offset that is definitively on a different line (e.g., 23) of the input string. This needs to be the absolute focus.
+        *   **Hypothesis:** There might be an extremely subtle issue related to string manipulation, character encoding, or an edge case in how JavaScript handles offsets and newlines that is not apparent in manual tracing, or the `svelte` string being passed to it at the critical moment has an unexpected structure (e.g. different newlines, though unlikely).
+        *   **Action:** Add even more focused logging *inside* `getLineAndColumnForOffset` specifically when it's about to calculate the line for `searchOffset: 621` (for the instance script debug case). Log the `str.length`, a small snippet of `str` around `searchOffset`, and the loop counter or `lines.length` just before returning. This will help verify if the string it's operating on is what we expect and how it derives the line count.
+2.  **Verify `scriptContentStartLineInOriginalFile` Propagation:** Once `getLineAndColumnForOffset` is confirmed to be accurate, ensure that the correct `instanceCivetContentStartLineInOriginalSvelte` (e.g., 23) is calculated and then correctly passed through to `chainSourceMaps` as `scriptContentStartLineInOriginalFile`.
+3.  **Re-evaluate Instance Script Line Mapping:** With a corrected `scriptContentStartLineInOriginalFile`, re-run tests and analyze logs to confirm that the final original Svelte line numbers for instance script mappings are accurate.
+4.  **Address Column Precision (Post-Line Accuracy):** Once line accuracy is achieved for both module and instance scripts, revisit column precision. The Stage B architecture (processing Svelte-with-embedded-TS) should ideally provide a more granular `baseMapPayload` from MagicString. If column issues persist, further investigation into the `baseMapPayload`'s segments for script areas and how `LEAST_UPPER_BOUND` bias in `chainSourceMaps` interacts with it will be needed.
+5.  **Clean Up Logging:** Remove extensive temporary debug logs.
+
+**Key Insight from `[67log]` that led to current focus:** The `getActualContentStartLine_DEBUG` log: `contentOffset: 618 (char: '\n') -> searchOffset: 621 (char: '/') -> resultLine: 22` was the smoking gun. It showed `getLineAndColumnForOffset` (called internally by `getActualContentStartLine`) returning `22` for `searchOffset: 621` which is known to be on original Svelte line `23`.
+
+// ... existing code ...
 

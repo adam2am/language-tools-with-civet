@@ -1,4 +1,4 @@
-import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
+import { TraceMap, originalPositionFor, LEAST_UPPER_BOUND } from '@jridgewell/trace-mapping';
 import { decode, encode } from '@jridgewell/sourcemap-codec';
 
 /**
@@ -24,6 +24,7 @@ export interface EncodedSourceMap {
  * @param tsCodeStart The start offset of the compiled TS code in the FINAL generatedContent string
  * @param originalContent The original Svelte file content
  * @param generatedContent The final generated TSX content string
+ * @param scriptContentStartLineInOriginalFile The 1-based line where Civet script content starts in the original Svelte file
  * @returns A new source map that chains the two maps
  */
 export function chainSourceMaps(
@@ -33,7 +34,8 @@ export function chainSourceMaps(
     scriptEnd: number,
     tsCodeStart: number,      // Re-added: offset of Civet-TS block in generatedContent
     originalContent: string,
-    generatedContent: string  // Re-added: the final generated TSX string
+    generatedContent: string,  // Re-added: the final generated TSX string
+    scriptContentStartLineInOriginalFile?: number // 1-based line where Civet script content starts in *original* Svelte file
 ): EncodedSourceMap {
     const civetTraceMap = civetMap instanceof TraceMap ? civetMap : new TraceMap(civetMap);
 
@@ -124,28 +126,72 @@ export function chainSourceMaps(
                         ? currentTsxPos.column - tsCodeStartPos.column
                         : currentTsxPos.column
                 };
+                
+                // <<<< DETAILED LOGGING FOR INSTANCE SCRIPT (TSX LINE 23 for instanceVar) >>>>
+                // const DEBUG_SPECIFIC_TSX_LINE = 23; // Temporarily disable specific line debugging
+                // if (currentTsxLineNumber === DEBUG_SPECIFIC_TSX_LINE && baseMapPayload.file && baseMapPayload.file.includes('test-stage-b-complex-component.svelte')) { // Temporarily disable
+                if (baseMapPayload.file && baseMapPayload.file.includes('test-stage-b-complex-component.svelte') && scriptStartPos.line === 22 && currentTsxLineNumber >=21 && currentTsxLineNumber <= 42 ) { // DEBUG INSTANCE SCRIPT MORE BROADLY
+                    console.log(`\n[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] === Processing segment for TSX L${currentTsxLineNumber}C${genCol} ===`);
+                    // console.log(`[DEBUG_TSX_L${DEBUG_SPECIFIC_TSX_LINE}] baseMap Segment (raw): [${segment.join(',')}]`);
+                    console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] origSveltePos_from_segment (1-based Svelte): L${origSveltePos_from_segment.line}C${origSveltePos_from_segment.column}`);
+                    console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] scriptStartPos (1-based Svelte): L${scriptStartPos.line}C${scriptStartPos.column}`); // This is for the svelteContentForProcessing
+                    console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] scriptEndPos (1-based Svelte): L${scriptEndPos.line}C${scriptEndPos.column}`);
+                    console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] tsCodeStart (original offset in final TSX): ${tsCodeStart}`);
+                    console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] tsCodeStartPos (1-based TSX where compiled Civet-TS starts): L${tsCodeStartPos.line}C${tsCodeStartPos.column}`);
+                    console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] currentTsxPos (1-based TSX being processed): L${currentTsxPos.line}C${currentTsxPos.column}`);
+                    console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] posInIntermediateTs (1-based for civetMap query): L${posInIntermediateTs.line}C${posInIntermediateTs.column}`);
+                }
+                // <<<< END DETAILED LOGGING >>>>
 
                 console.log('[chainSourceMaps] In Civet Script Block. TSX Pos:', currentTsxPos, 'Orig Svelte Pos:', origSveltePos_from_segment, 'tsCodeStartPos:', tsCodeStartPos);
                 console.log('[chainSourceMaps] Relative pos in Intermediate TS (for civetMap input):', posInIntermediateTs);
 
                 if (posInIntermediateTs.line >= 1 && posInIntermediateTs.column >= 0) {
-                    const civetSourcePos = originalPositionFor(civetTraceMap, posInIntermediateTs);
+                    const civetSourcePos = originalPositionFor(civetTraceMap, {
+                        line: posInIntermediateTs.line,
+                        column: posInIntermediateTs.column,
+                        bias: LEAST_UPPER_BOUND
+                    });
+                    
+                    // <<<< DETAILED LOGGING FOR INSTANCE SCRIPT (TSX LINE 23 for instanceVar) >>>>
+                    // if (currentTsxLineNumber === DEBUG_SPECIFIC_TSX_LINE && baseMapPayload.file && baseMapPayload.file.includes('test-stage-b-complex-component.svelte')) { // Temporarily disable
+                    if (baseMapPayload.file && baseMapPayload.file.includes('test-stage-b-complex-component.svelte') && scriptStartPos.line === 22 && currentTsxLineNumber >=21 && currentTsxLineNumber <= 42) { // DEBUG INSTANCE SCRIPT MORE BROADLY
+                        console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] civetTraceMap.sources:`, civetTraceMap.sources);
+                        console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] civetSourcePos (from originalPositionFor):`, civetSourcePos);
+                    }
+                    // <<<< END DETAILED LOGGING >>>>
+
                     console.log('[chainSourceMaps] Mapped Civet pos (from civetMap output):', civetSourcePos);
 
                     if (civetSourcePos.line !== null && civetSourcePos.column !== null && civetSourcePos.source !== null) {
-                        // If civetMap has its own sources (e.g. a virtual filename for the civet snippet),
-                        // we might need to add that to chainedMap.sources and use a new sourceIndex.
-                        // For now, assuming we want to map Civet code *as if* it lived in the Svelte file.
+                        
+                        // NEW LOGIC HYPOTHESIS:
+                        // Assume civetSourcePos.line is the 1-based absolute line in the original svelte file (due to `filename` option in Civet compile)
+                        // So, just convert it to 0-based for the sourcemap segment.
+                        let finalOriginalLine_0based = civetSourcePos.line - 1;
+
+                        // Optional: Add a warning if scriptContentStartLineInOriginalFile was provided but we are ignoring its value for line offsetting,
+                        // to catch if our assumption about civetSourcePos.line is wrong.
+                        // For now, let's proceed with the simpler direct usage of civetSourcePos.line.
+                        if (!scriptContentStartLineInOriginalFile || scriptContentStartLineInOriginalFile <= 0) {
+                             console.warn('[chainSourceMaps] scriptContentStartLineInOriginalFile not provided or invalid. This might be okay if Civet map lines are absolute.');
+                        }
+
                         const newSegmentData: number[] = [
-                            genCol,       // genCol from baseMapPayload (final TSX column)
-                            sourceIndex,  // sourceIndex from baseMapPayload (points to Svelte file)
-                            civetSourcePos.line - 1, // Original Civet line (0-based for encode)
-                            civetSourcePos.column,   // Original Civet column (0-based for encode)
+                        genCol,
+                        sourceIndex,
+                            finalOriginalLine_0based, 
+                            civetSourcePos.column,   
                         ];
                         if (nameIndex !== undefined) {
                             newSegmentData.push(nameIndex);
                         }
                         newLine.push(newSegmentData);
+                        // <<<< Log the pushed segment for instance script >>>>
+                        // if (currentTsxLineNumber === DEBUG_SPECIFIC_TSX_LINE && baseMapPayload.file && baseMapPayload.file.includes('test-stage-b-complex-component.svelte')) { // Temporarily disable
+                        if (baseMapPayload.file && baseMapPayload.file.includes('test-stage-b-complex-component.svelte') && scriptStartPos.line === 22 && currentTsxLineNumber >=21 && currentTsxLineNumber <= 42 ) { // DEBUG INSTANCE SCRIPT MORE BROADLY
+                            console.log(`[DEBUG_INSTANCE_SCRIPT_TSX_L${currentTsxLineNumber}] PUSHED newSegmentData: [${newSegmentData.join(',')}] to newLine for TSX L${currentTsxLineNumber}`);
+                        }
                     } else {
                         console.log('[chainSourceMaps] Failed to map through Civet. Using base segment.');
                         newLine.push(segment); // Cannot map through Civet, use base Svelte->TSX map
@@ -197,7 +243,7 @@ function isPositionInRange(
     // A position is *in* the range if it's < end position if end is exclusive.
     // If scriptEnd is the offset of the last char, then check should be <=.
     // Let's assume scriptEnd is exclusive (offset after last char of script)
-    if (pos.line === end.line && pos.column >= end.column) { 
+    if (pos.line === end.line && pos.column >= end.column) {
         return false;
     }
     return true;
