@@ -258,8 +258,27 @@ export function svelte2tsx(
                         filename: svelteFilePath, sync: true, sourceMap: true, inlineMap: false, js: false
                     });
                     const compiledCivetTs = civetResult.code;
+
+                    // --- START MICROTEST DEBUG LOGGING ---
+                    if (svelteFilePath.includes("test-minimal-civet-instance.svelte")) {
+                        console.log('[MICROTEST_DEBUG] === Civet Instance Script Compilation Details ===');
+                        console.log('[MICROTEST_DEBUG] Svelte File Path:', svelteFilePath);
+                        console.log('[MICROTEST_DEBUG] --- Input Civet Content ---');
+                        console.log(civetContent);
+                        console.log('[MICROTEST_DEBUG] --- Output Compiled TS ---');
+                        console.log(compiledCivetTs);
+                        console.log('[MICROTEST_DEBUG] --- Civet SourceMap JSON ---');
+                    }
+                    // --- END MICROTEST DEBUG LOGGING ---
+
                     if (civetResult.sourceMap) {
                         civetInstanceMapJson = civetResult.sourceMap.json();
+                        // --- START MICROTEST DEBUG LOGGING ---
+                        if (svelteFilePath.includes("test-minimal-civet-instance.svelte")) {
+                             console.log(JSON.stringify(civetInstanceMapJson, null, 2));
+                             console.log('[MICROTEST_DEBUG] === End Civet Instance Script Compilation Details ===');
+                        }
+                        // --- END MICROTEST DEBUG LOGGING ---
                          if (civetInstanceMapJson && civetInstanceMapJson.sources && Array.isArray(civetInstanceMapJson.sources) && civetInstanceMapJson.sources.length === 1 &&
                             (civetInstanceMapJson.sources[0] === null || civetInstanceMapJson.sources[0] === undefined) &&
                             civetInstanceMapJson.sourcesContent && Array.isArray(civetInstanceMapJson.sourcesContent) && civetInstanceMapJson.sourcesContent.length === 1) {

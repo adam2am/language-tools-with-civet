@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import util from 'util'; // For redirecting console
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const fixturesDir = path.join(__dirname, 'fixtures'); // Define fixturesDir
 
 // --- Redirect console output to a debug file ---
 const debugLogPath = path.join(__dirname, 'stage_b_output', 'complex_test_console.debug.log');
@@ -204,4 +205,42 @@ async function runTest() {
     }
 }
 
-runTest(); 
+async function testMinimalCivetInstanceSourcemap() {
+    const svelteFilePath = path.join(fixturesDir, 'test-minimal-civet-instance.svelte');
+    const svelteComponentContent = fs.readFileSync(svelteFilePath, 'utf-8');
+
+    console.log(`\n--- Running svelte2tsx for Minimal Civet Instance Test: ${svelteFilePath} ---\n`);
+
+    try {
+        const result = svelte2tsx(svelteComponentContent, {
+            filename: svelteFilePath,
+            isTsFile: true, // Assuming we want TS output features
+            mode: 'ts',
+            svelte5Plus: true, // Or false, depending on what svelte version features you are testing
+        });
+
+        // For this test, we are primarily interested in the console logs from svelte2tsx/index.ts
+        // No assertions needed here for query points yet.
+        console.log('[MinimalCivetInstanceTest] svelte2tsx processing completed.');
+        if (result.code) {
+            console.log('[MinimalCivetInstanceTest] Generated TSX code snippet (first 300 chars):');
+            console.log(result.code.substring(0,300) + '...');
+        }
+        if (result.map) {
+            console.log('[MinimalCivetInstanceTest] Generated final sourcemap (summary):');
+            console.log(`  Sources: ${result.map.sources}`);
+            console.log(`  Mappings length: ${result.map.mappings.length}`);
+        }
+
+    } catch (e) {
+        console.error('[MinimalCivetInstanceTest] Error during svelte2tsx processing:', e);
+    }
+    console.log(`\n--- Minimal Civet Instance Test for ${svelteFilePath} Finished ---\n`);
+}
+
+async function main() {
+    await runTest();
+    await testMinimalCivetInstanceSourcemap();
+}
+
+main().catch(console.error); 
