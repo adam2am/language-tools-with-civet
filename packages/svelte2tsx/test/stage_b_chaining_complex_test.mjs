@@ -42,51 +42,84 @@ const svelteComponentContent = `
   console.log moduleVar
 
   // Multi-line arrow function
-  export complexAdd := (a, b) ->
+  export complexAdd := (a, b) -> {
     c := a + b
     // Civet comment
     d := c * 2
     return d
+  }
 
   export const calculated = complexAdd(5, 3) // calculated should be 16
 
   // Object and array destructuring
   { anObject: { nestedKey }, anArray: [first, ,third] } := { anObject: { nestedKey: "ModuleValue" }, anArray: [10, 20, 30] }
   console.log nestedKey, first, third // "ModuleValue", 10, 30
+
+  // Conditional logic
+  x_mod := 10
+  export message_mod := if x_mod > 5 {
+    "Greater than 5 (module)"
+  } else {
+    "Not greater than 5 (module)"
+  }
+  console.log message_mod
+
+  // Loop
+  export doubled_mod := []
+  for i of [1..3] {
+    doubled_mod.push i * 2
+  }
+  console.log doubled_mod // [2, 4, 6]
 </script>
 
 <script lang="civet">
   // Instance script with complex Civet
-  instanceVar := "Hello from Complex Instance Civet!"
+  export let instanceVar: string = "Hello from Complex Instance Civet!"
   console.log instanceVar
 
+  // Multi-line arrow function (instance)
+  complexAddInst := (a, b) -> {
+    c := a + b
+    d := c * 2
+    return d
+  }
+  calculatedInst := complexAddInst(2, 2) // Should be 8
+  console.log calculatedInst
+
   // Conditional logic
-  x := 10
-  message := if x > 5
-    "Greater than 5"
-  else
-    "Not greater than 5"
-  console.log message
+  x_inst := 10
+  message_inst := if x_inst > 5 {
+    "Greater than 5 (instance)"
+  } else {
+    "Not greater than 5 (instance)"
+  }
+  console.log message_inst
 
   // Loop
-  doubled := []
-  for i of [1..3]
-    doubled.push i * 2
-  console.log doubled // [2, 4, 6]
+  doubled_inst := []
+  for i of [1..3] {
+    doubled_inst.push i * 2
+  }
+  console.log doubled_inst // [2, 4, 6]
 
   // Another destructuring example
   { propA, propB = "defaultB" } .= { propA: "ValueA" }
   console.log propA, propB
 </script>
 
-<h1>Complex Test Component</h1>
-<p>{instanceVar}</p>
+<div>
 <p>{moduleVar}</p>
 <p>{calculated}</p>
-<p>Nested: {nestedKey}, First: {first}, Third: {third}</p>
-<p>Message: {message}</p>
-<p>Doubled: {doubled.join(', ')}</p>
-<p>Props: {propA}, {propB}</p>
+  <p>{nestedKey} {first} {third}</p>
+  <p>{message_mod}</p>
+  <p>{doubled_mod.join(',')}</p>
+
+  <p>{instanceVar}</p>
+  <p>{calculatedInst}</p>
+  <p>{message_inst}</p>
+  <p>{doubled_inst.join(',')}</p>
+  <p>{propA} {propB}</p>
+</div>
 `;
 
 const svelteFilePath = 'test-stage-b-complex-component.svelte'; // Virtual filename
@@ -141,48 +174,68 @@ async function runTest() {
         // IMPORTANT: TSX Line/Column numbers below are ESTIMATES. 
         // They MUST be updated after inspecting the generated test-component.stage-b-complex.tsx
         const queryPoints = [
-            // Module Script Queries
-            // Original Civet: moduleVar := "Hello from Complex Module Civet!" (Svelte File Line 3, `moduleVar` at col 9)
-            { tsxLine: 4, tsxColumn: 13, description: "moduleVar in definition", expected: { sourceFile: "test-stage-b-complex-component.svelte", line: 3, column: 9, scriptType: "module" } }, 
-            // Original Civet: c := a + b (Svelte File Line 8, `c` at col 4)
-            { tsxLine: 9, tsxColumn: 10, description: "c in 'c := a + b'", expected: { sourceFile: "test-stage-b-complex-component.svelte", line: 8, column: 4, scriptType: "module" } },
-            // Original Civet: return d (Svelte File Line 11, `d` at col 11)
-            { tsxLine: 12, tsxColumn: 11, description: "d in 'return d'", expected: { sourceFile: "test-stage-b-complex-component.svelte", line: 11, column: 11, scriptType: "module" } },
-            // Original Civet: export const calculated = complexAdd(5, 3) (Svelte File Line 13, 'complexAdd' token @ C23)
-            { tsxLine: 15, tsxColumn: 25, description: "complexAdd in call", expected: { line: 13, column: 23, scriptType: "module" } },
-            // Original Civet: { anObject: { nestedKey }, ... } := ... (Svelte File Line 16, 'nestedKey' on LHS @ C15)
-            { tsxLine: 18, tsxColumn: 25, description: "nestedKey in module destructuring", expected: { line: 16, column: 15, scriptType: "module" } },
-            // Original Civet: console.log nestedKey (Svelte File Line 17, 'nestedKey' token @ C14)
-            { tsxLine: 19, tsxColumn: 12, description: "nestedKey in module console.log", expected: { line: 17, column: 14, scriptType: "module" } },
-            
-            // Instance Script Queries
-            // Original Civet: instanceVar := "Hello from Complex Instance Civet!" (Svelte File Line 22, `instanceVar` at col 2)
-            { tsxLine: 22, tsxColumn: 8, description: "instanceVar in definition", expected: { sourceFile: "test-stage-b-complex-component.svelte", line: 22, column: 2, scriptType: "instance" } },
-            // Original Civet: message := if x > 5 (Svelte File Line 26, `message` at col 2)
-            { tsxLine: 31, tsxColumn: 8, description: "message in conditional assign", expected: { line: 26, column: 2, scriptType: "instance" } },
-            // Original Civet: "Greater than 5" (Svelte File Line 27, string at col 4)
-            { tsxLine: 28, tsxColumn: 10, description: "string 'Greater than 5'", expected: { line: 27, column: 4, scriptType: "instance" } },
-            // Original Civet: doubled.push i * 2 (Svelte File Line 34, 'doubled' token @ C4)
-            { tsxLine: 36, tsxColumn: 4, description: "doubled in loop", expected: { line: 34, column: 4, scriptType: "instance" } },
-            // Original Civet: for i of [1..3] (Svelte File Line 33, 'i' token @ C6) - TSX: for (const i of [1, 2, 3]) { (i @ C17 if 'of' works)
-            // TSX with original for...in: for (const i in [1, 2, 3]) { (i @ C16)
-            { tsxLine: 35, tsxColumn: 17, description: "loop variable i", expected: { line: 33, column: 6, scriptType: "instance" } }, // Assuming 'for...of' generates `i` at column 17
-            // Original Civet: { propA, propB = "defaultB" } .= { propA: "ValueA" } (Svelte L38, 'propA' in {propA:"ValueA"} @ C28)
-            { tsxLine: 41, tsxColumn: 38, description: "propA in instance destructuring RHS", expected: { line: 38, column: 28, scriptType: "instance" } },
-             // Original Civet: console.log propA (Svelte L39, 'propA' token @ C14)
-            { tsxLine: 42, tsxColumn: 12, description: "propA in instance console.log", expected: { line: 39, column: 14, scriptType: "instance" } }
+            // Module Script Query Points
+            // TSX Line, TSX Col, Svelte File, Svelte Line, Svelte Col (0-based), Token
+            [4, 13, svelteFilePath, 3, 7, "moduleVar"],             // moduleVar :=
+            [5, 12, svelteFilePath, 4, 12, "moduleVar"],            // moduleVar (in console.log)
+            [8, 13, svelteFilePath, 7, 7, "complexAdd"],            // complexAdd :=
+            [9, 10, svelteFilePath, 8, 4, "c"],                    // c := a + b
+            [11, 10, svelteFilePath, 10, 4, "d"],                   // d := c * 2
+            [12, 11, svelteFilePath, 11, 9, "d"],                   // return d
+            [15, 13, svelteFilePath, 14, 13, "calculated"],          // calculated =
+            [15, 24, svelteFilePath, 14, 26, "complexAdd"],        // complexAdd(5,3)
+            [18, 24, svelteFilePath, 17, 7, "nestedKey"],           // nestedKey (destructured)
+            [18, 38, svelteFilePath, 17, 17, "first"],             // first (destructured)
+            [18, 46, svelteFilePath, 17, 26, "third"],             // third (destructured)
+            [19, 12, svelteFilePath, 18, 12, "nestedKey"],         // nestedKey (in console.log)
+            [19, 23, svelteFilePath, 18, 23, "first"],           // first (in console.log)
+            [19, 30, svelteFilePath, 18, 30, "third"],           // third (in console.log)
+            [22, 8, svelteFilePath, 22, 7, "x_mod"],               // x_mod :=
+            [23, 13, svelteFilePath, 23, 7, "message_mod"],         // message_mod :=
+            [23, 30, svelteFilePath, 23, 27, "x_mod"],             // x_mod (in if condition)
+            [26, 12, svelteFilePath, 27, 12, "message_mod"],       // message_mod (in console.log)
+            [29, 13, svelteFilePath, 30, 7, "doubled_mod"],         // doubled_mod :=
+            [30, 38, svelteFilePath, 31, 7, "i"],                   // i (in for loop) - module
+            [31, 4, svelteFilePath, 32, 4, "doubled_mod"],         // doubled_mod.push
+            [31, 21, svelteFilePath, 32, 21, "i"],                 // i * 2 - module
+            [33, 12, svelteFilePath, 34, 12, "doubled_mod"],       // doubled_mod (in console.log)
+
+            // Instance Script Query Points (Svelte line numbers corrected)
+            // TSX Line, TSX Col, Svelte File, Svelte Line (Corrected), Svelte Col (0-based), Token
+            [37, 7, svelteFilePath, 40, 7, "instanceVar"],        // export let instanceVar
+            [38, 12, svelteFilePath, 41, 12, "instanceVar"],       // console.log instanceVar
+            [41, 8, svelteFilePath, 44, 7, "complexAddInst"],     // complexAddInst :=
+            [42, 10, svelteFilePath, 45, 4, "c"],                  // c := a + b (in complexAddInst)
+            [43, 10, svelteFilePath, 46, 4, "d"],                  // d := c * 2 (in complexAddInst)
+            [44, 11, svelteFilePath, 47, 9, "d"],                  // return d (in complexAddInst)
+            [46, 8, svelteFilePath, 49, 7, "calculatedInst"],     // calculatedInst :=
+            [46, 25, svelteFilePath, 49, 24, "complexAddInst"],   // complexAddInst(2,2)
+            [47, 12, svelteFilePath, 50, 12, "calculatedInst"],    // console.log calculatedInst
+            [50, 8, svelteFilePath, 53, 2, "x_inst"],              // x_inst :=
+            [54, 13, svelteFilePath, 54, 2, "message_inst"],       // message_inst :=
+            [51, 15, svelteFilePath, 54, 19, "x_inst"],            // x_inst (in if condition)
+            [55, 12, svelteFilePath, 59, 12, "message_inst"],      // console.log message_inst
+            [58, 8, svelteFilePath, 62, 2, "doubled_inst"],       // doubled_inst :=
+            [59, 38, svelteFilePath, 63, 7, "i"],                  // i (in for loop) - instance
+            [60, 4, svelteFilePath, 64, 4, "doubled_inst"],       // doubled_inst.push
+            [60, 21, svelteFilePath, 64, 21, "i"],                 // i * 2 - instance
+            [62, 12, svelteFilePath, 66, 12, "doubled_inst"],      // console.log doubled_inst
+            [65, 7, svelteFilePath, 69, 3, "propA"],               // propA (destructuring)
+            [65, 14, svelteFilePath, 69, 10, "propB"],              // propB (destructuring)
+            [66, 12, svelteFilePath, 70, 12, "propA"],             // console.log propA
+            [66, 19, svelteFilePath, 70, 19, "propB"]              // console.log propB
         ];
 
         logContent += "\n--- Querying Final Map (Complex Test) ---\n";
         queryPoints.forEach(qp => {
-            const generatedPosition = { line: qp.tsxLine, column: qp.tsxColumn }; // Query with 0-based column
+            const generatedPosition = { line: qp[0], column: qp[1] }; // Query with 0-based column
             const originalPos = originalPositionFor(traceMap, generatedPosition); // Receives 1-based line, 0-based col
             
-            logContent += `Querying for TSX (${svelteFilePath} generated): L${qp.tsxLine}C${qp.tsxColumn} (Description: ${qp.description})\n`;
+            logContent += `Querying for TSX (${svelteFilePath} generated): L${qp[0]}C${qp[1]} (Description: ${qp[5]})\n`;
             if (originalPos.source === svelteFilePath) {
                 logContent += `  -> Original (${originalPos.source}): L${originalPos.line}C${originalPos.column}\n`; // originalPos has 1-based line, 0-based col
-                logContent += `     Expected (Original Civet in ${qp.expected.scriptType}): L${qp.expected.line}C${qp.expected.column}\n`;
-                if (originalPos.line === qp.expected.line && originalPos.column === qp.expected.column) {
+                logContent += `     Expected (Original Civet in ${qp[2]}): L${qp[3]}C${qp[4]}\n`;
+                if (originalPos.line === qp[3] && originalPos.column === qp[4]) {
                     logContent += "     Status: MATCH!\n";
                 } else {
                     logContent += "     Status: MISMATCH! (Line or Column)\n";

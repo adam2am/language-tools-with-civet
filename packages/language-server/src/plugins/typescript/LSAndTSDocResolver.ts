@@ -27,7 +27,6 @@ import { createProjectService } from './serviceCache';
 import { GlobalSnapshotsManager, SnapshotManager } from './SnapshotManager';
 import { isSubPath } from './utils';
 import { FileMap, FileSet } from '../../lib/documents/fileCollection';
-import { Logger } from '../../logger';
 
 interface LSAndTSDocResolverOptions {
     notifyExceedSizeLimit?: () => void;
@@ -56,9 +55,6 @@ export class LSAndTSDocResolver {
         private readonly configManager: LSConfigManager,
         private readonly options?: LSAndTSDocResolverOptions
     ) {
-        // Enable debug logging for Civet diagnostics
-        Logger.setDebug(true);
-
         docManager.on(
             'documentChange',
             debounceSameArg(
@@ -170,192 +166,9 @@ export class LSAndTSDocResolver {
     }> {
         const { tsDoc, lsContainer, userPreferences } = await this.getLSAndTSDocWorker(document);
 
-        // Wrap the language service to log definition lookups
-        const origLang = lsContainer.getService();
-        const lang = { ...origLang }; // Clone to override methods safely
-
-        const svelteFilePath = document.getFilePath()!;
-        const tsxFilePath = tsDoc.filePath;
-
-        const origGetDef = origLang.getDefinitionAtPosition.bind(origLang);
-        lang.getDefinitionAtPosition = (fileName: string, position: number) => {
-            // fileName is the Svelte file path, position is offset in Svelte file
-            console.log('WRAPPER HIT: getDefinitionAtPosition. Incoming Svelte fileName:', fileName, 'Incoming Svelte position:', position, 'Target TSX filePath:', tsxFilePath);
-            
-            const svelteLineCharPos = document.positionAt(position); // Convert Svelte offset to Line/Char
-            const tsxPosition = tsDoc.getGeneratedPosition(svelteLineCharPos); // Map Svelte Line/Char to TSX Line/Char
-            const tsxOffset = tsDoc.offsetAt(tsxPosition); // Convert TSX Line/Char to TSX offset
-
-            Logger.debug(
-                '[LSResolver] getDefinitionAtPosition: Svelte input:', {fileName, position, line: svelteLineCharPos.line, char: svelteLineCharPos.character }, 
-                'Mapped to TSX:', {tsxFilePath, tsxOffset, line: tsxPosition.line, char: tsxPosition.character}
-            );
-
-            const defs = origGetDef(tsxFilePath, tsxOffset);
-            Logger.debug('[LSResolver] Initial getDefinitionAtPosition result (from TSX):', defs);
-
-            // Check defs here to satisfy linter for the disabled block below
-            const اولیهDefsExist = !!defs && defs.length > 0;
-            // Effectively disable fallback by changing condition to always false
-            if (false && ! اولیهDefsExist && typeof tsxOffset === 'number') { // Fallback disabled, using اولیهDefsExist to satisfy linter
-                Logger.debug('[LSResolver] Initial getDefinitionAtPosition failed on TSX. Trying fallbacks. Fallback uses TSX offset:', tsxOffset);
-                const program = origLang.getProgram()!;
-                    if (program) {
-                    const sourceFile = program.getSourceFile(tsxFilePath)!;
-                        if (sourceFile) {
-                        try {
-                            const loc = sourceFile.getLineAndCharacterOfPosition(tsxOffset);
-                            const fullText = tsDoc.getText(0, tsDoc.getLength());
-                            const lines = fullText.split(/\r?\n/);
-                            const lineText = lines[loc.line] || '';
-                            const prefix = lineText.slice(0, loc.character);
-                            const suffix = lineText.slice(loc.character);
-                            const prefixMatch = /[A-Za-z_]\w*$/.exec(prefix);
-                            const suffixMatch = /^[A-Za-z_]\w*/.exec(suffix);
-                            let candidateOffsetInTsx: number | undefined;
-                            if (prefixMatch && prefixMatch[0].length > 0) {
-                                const startCol = loc.character - prefixMatch![0].length;
-                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
-                            } else if (suffixMatch && suffixMatch![0].length > 0) {
-                                const startCol = loc.character + (suffixMatch! .index ?? 0);
-                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
-                            }
-                            if (candidateOffsetInTsx !== undefined) {
-                                Logger.debug('[LSResolver TextFallback] Retry getDefinitionAtPosition at TSX offset:', candidateOffsetInTsx);
-                                const textRetryDefs = origGetDef(tsxFilePath, candidateOffsetInTsx!);
-                                if (textRetryDefs && textRetryDefs!.length > 0) {
-                                    Logger.debug('[LSResolver TextFallback] Text-based fallback found definitions:', textRetryDefs);
-                                    return textRetryDefs;
-                                }
-                            }
-                        } catch (e: any) {
-                            Logger.debug('[LSResolver TextFallback] Error:', e.message);
-                                    }
-
-                        // AST-based fallback (operates on TSX AST)
-                        Logger.debug('[LSResolver ASTFallback] Trying AST-based fallback for position (TSX offset):', tsxOffset);
-                        let closestNode: ts.Node | undefined;
-                        let closestDistance = Infinity;
-
-                        function findNodeAtPositionRecursive(node: ts.Node | undefined) {
-                            if (!node) return; // Guard for undefined
-                                        if (ts.isIdentifier(node)) {
-                                const distance = Math.abs(node.getStart(sourceFile) - tsxOffset); 
-                                if (distance < closestDistance) {
-                                    closestDistance = distance;
-                                    closestNode = node;
-                                }
-                                        }
-                            ts.forEachChild(node, findNodeAtPositionRecursive);
-                                    }
-                        findNodeAtPositionRecursive(sourceFile);
-
-                        if (closestNode) {
-                            const nodeStartInTsx = closestNode!.getStart(sourceFile);
-                            Logger.debug('[LSResolver ASTFallback] Found closest node in TSX:', closestNode!.getText(sourceFile), 'kind:', ts.SyntaxKind[closestNode!.kind], 'at TSX offset:', nodeStartInTsx);
-                            const astRetryDefs = origGetDef(tsxFilePath, nodeStartInTsx);
-                            Logger.debug('[LSResolver ASTFallback] Retry with AST candidate returned:', astRetryDefs!);
-                            if (astRetryDefs && astRetryDefs!.length > 0) return astRetryDefs!;
-                        } else {
-                            Logger.debug('[LSResolver ASTFallback] No close node found for TSX offset:', tsxOffset);
-                        }
-                    }
-                }
-            }
-            // Definitions are in TSX coordinates. They need to be mapped back to Svelte by the caller of getLSAndTSDoc if necessary.
-            return defs;
-        };
-
-        const origGetQuickInfo = origLang.getQuickInfoAtPosition.bind(origLang);
-        lang.getQuickInfoAtPosition = (fileName: string, position: number) => {
-            // fileName is the Svelte file path, position is offset in Svelte file
-            console.log('WRAPPER HIT: getQuickInfoAtPosition. Incoming Svelte fileName:', fileName, 'Incoming Svelte position:', position, 'Target TSX filePath:', tsxFilePath);
-
-            const svelteLineCharPos = document.positionAt(position);
-            const tsxPosition = tsDoc.getGeneratedPosition(svelteLineCharPos);
-            const tsxOffset = tsDoc.offsetAt(tsxPosition);
-
-            Logger.debug(
-                '[LSResolver] getQuickInfoAtPosition: Svelte input:', {fileName, position, line: svelteLineCharPos.line, char: svelteLineCharPos.character }, 
-                'Mapped to TSX:', {tsxFilePath, tsxOffset, line: tsxPosition.line, char: tsxPosition.character}
-            );
-
-            const quickInfo = origGetQuickInfo(tsxFilePath, tsxOffset);
-            Logger.debug('[LSResolver] Initial getQuickInfoAtPosition result (from TSX):', quickInfo ? { text: quickInfo.displayParts?.map(dp => dp.text).join(''), kind: quickInfo.kind } : null);
-            
-            // Effectively disable fallback by changing condition to always false
-            if (false && !quickInfo && typeof tsxOffset === 'number') { // Fallback disabled
-                Logger.debug('[LSResolver] Initial getQuickInfoAtPosition failed on TSX. Fallback uses TSX offset:', tsxOffset);
-                // Text-based fallback (operates on TSX content)
-                const program = origLang.getProgram?.()!;
-                if (program) {
-                    const sourceFile = program.getSourceFile(tsxFilePath)!;
-                    if (sourceFile) {
-                        try {
-                            const loc = sourceFile.getLineAndCharacterOfPosition(tsxOffset);
-                            const fullText = tsDoc.getText(0, tsDoc.getLength());
-                            const lines = fullText.split(/\r?\n/);
-                            const lineText = lines[loc.line] || '';
-                            const prefix = lineText.slice(0, loc.character);
-                            const suffix = lineText.slice(loc.character);
-                            const prefixMatch = /[A-Za-z_]\w*$/.exec(prefix);
-                            const suffixMatch = /^[A-Za-z_]\w*/.exec(suffix);
-                            let candidateOffsetInTsx: number | undefined;
-                            if (prefixMatch) {
-                                const startCol = loc.character - prefixMatch![0].length;
-                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
-                            } else if (suffixMatch) {
-                                const startCol = loc.character + (suffixMatch! .index ?? 0);
-                                candidateOffsetInTsx = sourceFile.getPositionOfLineAndCharacter(loc.line, startCol);
-                            }
-                            if (candidateOffsetInTsx !== undefined) {
-                                Logger.debug('[LSResolver TextFallback] Retry QuickInfo at TSX offset:', candidateOffsetInTsx);
-                                const retryQuickInfo = origGetQuickInfo(tsxFilePath, candidateOffsetInTsx!);
-                                if (retryQuickInfo) {
-                                    Logger.debug('[LSResolver TextFallback] Retry QuickInfo returned:', retryQuickInfo);
-                                    return retryQuickInfo;
-                                }
-                            }
-                        } catch (e: any) {
-                            Logger.debug('[LSResolver TextFallback] Error:', e.message);
-                                                }
-                        // AST-based fallback
-                        Logger.debug('[LSResolver ASTFallback] Trying AST-based fallback for TSX offset:', tsxOffset);
-                        let closestNode: ts.Node | undefined;
-                        let closestDistance = Infinity;
-                        function findNode(node: ts.Node | undefined) {
-                            if (!node) return; // Guard for undefined node
-                            if (ts.isIdentifier(node)) {
-                                const distance = Math.abs(node.getStart(sourceFile) - tsxOffset);
-                                if (distance < closestDistance) {
-                                    closestDistance = distance;
-                                    closestNode = node;
-                                }
-                            }
-                            ts.forEachChild(node, findNode);
-                        }
-                        findNode(sourceFile);
-                        if (closestNode) {
-                            const nodeOffset = closestNode!.getStart(sourceFile);
-                            Logger.debug('[LSResolver ASTFallback] Retry QuickInfo at TSX offset (AST):', nodeOffset);
-                            const astQuickInfo = origGetQuickInfo(tsxFilePath, nodeOffset);
-                            if (astQuickInfo) {
-                                Logger.debug('[LSResolver ASTFallback] Retry AST QuickInfo returned:', astQuickInfo);
-                                return astQuickInfo;
-                            }
-                        } else {
-                            Logger.debug('[LSResolver ASTFallback] No identifier found near TSX offset:', tsxOffset);
-                }
-            }
-                }
-            }
-            // QuickInfo contains a textSpan in TSX coordinates. It needs to be mapped back by the caller.
-            return quickInfo;
-        };
-
         return {
             tsDoc,
-            lang, // return the wrapped version
+            lang: lsContainer.getService(),
             userPreferences,
             lsContainer
         };

@@ -17,15 +17,12 @@ import {
     Position,
     WorkspaceEdit
 } from 'vscode-languageserver';
-import { CivetHoverProvider } from './features/CivetHoverProvider';
-import { CivetDiagnosticsProvider } from './features/CivetDiagnosticProvider';
-import { CivetCompletionsProvider } from './features/CivetCompletionsProvider';
-import { CivetCodeActionsProvider } from './features/CivetCodeActionsProvider';
+import { HoverProviderImpl } from '../typescript/features/HoverProvider';
+import { DiagnosticsProviderImpl } from '../typescript/features/DiagnosticsProvider';
+import { CompletionsProviderImpl } from '../typescript/features/CompletionProvider';
+import { CodeActionsProviderImpl } from '../typescript/features/CodeActionsProvider';
 import { LSAndTSDocResolver } from '../typescript/LSAndTSDocResolver';
 import { SelectionRangeProviderImpl } from '../typescript/features/SelectionRangeProvider';
-// import { CivetCodeActionsProvider } from './features/CivetDiagnosticsProvider';
-// Import other feature providers here as they are created
-
 
 export class CivetPlugin implements
     DiagnosticsProvider,
@@ -35,17 +32,17 @@ export class CivetPlugin implements
     SelectionRangeProvider {
     __name = 'civet';
 
-    private hoverProvider: CivetHoverProvider;
-    private diagnosticsProvider: CivetDiagnosticsProvider;
-    private completionsProvider: CivetCompletionsProvider;
-    private codeActionsProvider: CivetCodeActionsProvider;
+    private hoverProvider: HoverProviderImpl;
+    private diagnosticsProvider: DiagnosticsProviderImpl;
+    private completionsProvider: CompletionsProviderImpl;
+    private codeActionsProvider: CodeActionsProviderImpl;
     private selectionRangeProvider: SelectionRangeProviderImpl;
 
     constructor(private configManager: LSConfigManager, private lsAndTSDocResolver: LSAndTSDocResolver) {
-        this.hoverProvider = new CivetHoverProvider(this.lsAndTSDocResolver);
-        this.diagnosticsProvider = new CivetDiagnosticsProvider(this.lsAndTSDocResolver, this.configManager);
-        this.completionsProvider = new CivetCompletionsProvider(this.lsAndTSDocResolver, this.configManager);
-        this.codeActionsProvider = new CivetCodeActionsProvider(this.lsAndTSDocResolver, this.configManager);
+        this.hoverProvider = new HoverProviderImpl(this.lsAndTSDocResolver);
+        this.diagnosticsProvider = new DiagnosticsProviderImpl(this.lsAndTSDocResolver, this.configManager);
+        this.completionsProvider = new CompletionsProviderImpl(this.lsAndTSDocResolver, this.configManager);
+        this.codeActionsProvider = new CodeActionsProviderImpl(this.lsAndTSDocResolver, this.completionsProvider, this.configManager);
         this.selectionRangeProvider = new SelectionRangeProviderImpl(this.lsAndTSDocResolver);
     }
 
