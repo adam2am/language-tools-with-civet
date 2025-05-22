@@ -85,6 +85,13 @@ export class CivetLanguageServiceHost implements ts.LanguageServiceHost {
     // --- Custom Civet management methods ---
 
     /**
+     * Retrieve the stored information for a Civet file, primarily for testing.
+     */
+    public getScriptInfo(uri: string): CivetFileInfo | undefined {
+        return this.civetFiles.get(uri);
+    }
+
+    /**
      * Update or add the compiled TS code for a given .svelte URI.
      */
     public updateCivetFile(uri: string, compiledTsCode: string, sourcemapLines: SourceMap['lines']): void {

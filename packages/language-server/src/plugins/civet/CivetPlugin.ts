@@ -35,39 +35,40 @@ import { CivetLanguageServiceHost, SourceMapLinesEntry } from '../../typescriptS
 // Extracting Civet Script Content: The line const civetCode = document.getText(); is a placeholder. We need a robust way to get only the content of the <script lang="civet"> ... </script> tag from the full Svelte Document object. The SveltePlugin or Document class itself might have utilities for this (e.g., document.getScriptText()). If not, a reliable parsing step (e.g., using a simple regex or a more robust Svelte parser if available in the context) is needed.
 
 
-// TODO: Verify the actual structure of SourceMapping from @danielx/civet
-// This is a placeholder based on common sourcemap segment structures.
-interface CivetSourceMapping {
-    sourceLine: number;    // Original line number (0-indexed?)
-    sourceColumn: number;  // Original column number (0-indexed?)
-    generatedLine: number; // Generated line number (0-indexed?)
-    generatedColumn: number;// Generated column number (0-indexed?)
-    name?: string; // Optional: original identifier name
-    // Civet might use different names or have more/less properties.
-}
+// Removed CivetSourceMapping interface as it's not used.
 
 /**
- * Transforms the Civet compiler's sourcemap line structure (SourceMapping[][])
+ * Transforms the Civet compiler's sourcemap line structure (decoded VLQ segments per line)
  * into the flat SourceMapLinesEntry[] expected by CivetLanguageServiceHost.
+ * Civet's `sourceMap.lines` provides `MappingItem[][]` where `MappingItem` is
+ * `[generatedColumn, sourceFileIndex, sourceLine, sourceColumn, nameIndex?]`.
+ * All line/column numbers from Civet are 0-indexed.
+ * `SourceMapLinesEntry` expects 1-indexed lines and 0-indexed columns.
  */
-function transformCivetSourcemapLines(civetLines: CivetSourceMapping[][]): SourceMapLinesEntry[] {
+export function transformCivetSourcemapLines(decodedMappings: number[][][]): SourceMapLinesEntry[] {
     const transformed: SourceMapLinesEntry[] = [];
-    if (!civetLines) return transformed;
+    if (!decodedMappings) return transformed;
 
-    for (const lineSegments of civetLines) {
-        if (!lineSegments) continue;
+    decodedMappings.forEach((lineSegments, generatedLineIndex) => {
+        if (!lineSegments) return;
         for (const segment of lineSegments) {
-            if (!segment) continue;
-            // TODO: Adjust 0-indexed vs 1-indexed based on Civet & TS host expectations.
-            // Assuming CivetSourceMapping provides 0-indexed and SourceMapLinesEntry expects 1-indexed for lines, 0-indexed for columns
+            if (!segment || segment.length < 4) continue; // Ensure segment has enough elements
+
+            // segment is [generatedColumn, sourceFileIndex, originalSourceLine, originalSourceColumn, nameIndex?]
+            // All are 0-indexed from Civet.
+            const generatedColumn = segment[0];
+            // const sourceFileIndex = segment[1]; // Not directly used in SourceMapLinesEntry
+            const originalSourceLine = segment[2];
+            const originalSourceColumn = segment[3];
+
             transformed.push({
-                originalLine: segment.sourceLine + 1, 
-                originalColumn: segment.sourceColumn,
-                generatedLine: segment.generatedLine + 1,
-                generatedColumn: segment.generatedColumn,
+                originalLine: originalSourceLine + 1,      // Convert 0-indexed to 1-indexed
+                originalColumn: originalSourceColumn,        // Already 0-indexed
+                generatedLine: generatedLineIndex + 1,     // Convert 0-indexed to 1-indexed
+                generatedColumn: generatedColumn,          // Already 0-indexed
             });
         }
-    }
+    });
     return transformed;
 }
 
@@ -218,7 +219,8 @@ export class CivetPlugin implements
             let finalSourcemapLines: SourceMapLinesEntry[] = [];
     
             if (compileResult.sourceMap && compileResult.sourceMap.lines) {
-                finalSourcemapLines = transformCivetSourcemapLines(compileResult.sourceMap.lines as any as CivetSourceMapping[][]);
+                // No longer casting, direct pass-through of the expected number[][][] structure
+                finalSourcemapLines = transformCivetSourcemapLines(compileResult.sourceMap.lines);
             } else {
                 console.warn(`Civet compiler for ${document.uri} did not produce sourceMap.lines structure.`);
             }

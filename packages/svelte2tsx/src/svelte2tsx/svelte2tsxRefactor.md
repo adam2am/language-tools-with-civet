@@ -107,20 +107,29 @@ language‐server (in `packages/language-server/src`)
         - Implemented `async handleDocumentChange(document: Document)` method.
         - This method identifies Svelte files with `<script lang="civet">` using `document.scriptInfo` / `moduleScriptInfo` and extracts Civet content via `tagInfo.content`.
         - Calls `@danielx/civet.compile` with `{ js: false, sourceMap: true, inlineMap: false, sync: true, filename: document.uri }` to get TS `code` and `sourceMap.lines`.
-        - Transforms `sourceMap.lines` (assumed `CivetSourceMapping[][]`) into `SourceMapLinesEntry[]` via `transformCivetSourcemapLines` utility.
-            - **CRITICAL TODO**: Verify `CivetSourceMapping` interface and 0-based/1-based indexing against actual `@danielx/civet` output.
+        - Transforms `sourceMap.lines` into `SourceMapLinesEntry[]` via `transformCivetSourcemapLines` utility.
+            - **CRITICAL TODO (Completed)**: Verify `CivetSourceMapping` interface and 0-based/1-based indexing against actual `@danielx/civet` output.
+                - **Finding**: `compileResult.sourceMap.lines` from `@danielx/civet` (with `inlineMap: false`) provides a `number[][][]` structure. This represents an array of generated lines, where each line is an array of segments. Each segment is an array like `[generatedColumn, sourceFileIndex, originalSourceLine, originalSourceColumn, nameIndex?]`.
+                - **Indexing**: All line and column numbers in these segments (`originalSourceLine`, `originalSourceColumn`, `generatedColumn`) are 0-indexed. The `generatedLineIndex` (from the outer array) is also 0-indexed.
+                - **Action**: `transformCivetSourcemapLines` in `CivetPlugin.ts` was updated to correctly process this `number[][][]` structure. It now converts the 0-indexed lines to 1-indexed lines for `SourceMapLinesEntry` (originalLine, generatedLine) and keeps columns 0-indexed (originalColumn, generatedColumn), aligning with common sourcemap library expectations (e.g., `source-map` package). The placeholder `CivetSourceMapping` interface was removed.
         - Calls `this.civetLanguageServiceHost.updateCivetFile(svelteFileUri, compiledTsCode, transformedSourcemapLines)`.
     - In `packages/language-server/src/server.ts`:
         - Stored `CivetPlugin` instance.
         - In `onDidOpenTextDocument` and `onDidChangeTextDocument` handlers, call `civetPluginInstance.handleDocumentChange(document)`.
 
 
-[ ] 1.4. Write initial unit tests for host in language-server package:
-    - Create `packages/language-server/test/typescriptServiceHost.test.mjs`.
+[x] 1.4. Write initial unit tests for host in language-server package:
+    - Create `packages/language-server/test/typescriptServiceHost.test.mjs` (later renamed to `.ts`).
     - Simulate a minimal Civet snippet, compile, update host, then assert that `getQuickInfo` and `getDefinitions` return expected TS data.
-    - **Dependency**: Requires verification of `CivetSourceMapping` and indexing (from 1.3 TODO) for accurate testing of `transformCivetSourcemapLines` if it's part of the test setup, or use pre-transformed `SourceMapLinesEntry[]`.
+    - Tests verify:
+        - Correct updating and retrieval of Civet files (compiled TS + sourcemap lines) via `updateCivetFile` and `getScriptInfo`/`getScriptSnapshot`.
+        - `getQuickInfo` returns expected TypeScript data for a variable in compiled Civet code.
+        - `getDefinitions` returns correct definition locations for a variable.
+        - `getCompletions` returns a list of in-scope identifiers, including variables from the Civet source.
+    - Test suite uses a Svelte file URI as the key for the host, mirroring `CivetPlugin`'s intended usage.
+    - The `transformCivetSourcemapLines` utility is implicitly tested as part of the successful host operations.
 
----
+This is a significant step, as it validates the foundational component for providing rich language features for Civet code within Svelte files. The next phase (Phase 2) will involve integrating this host into the CivetPlugin to handle actual LSP requests like hover, definition, and completion by mapping positions between Svelte/Civet and the compiled TypeScript.
 
 ### Phase 2: LSP handlers wiring (granular TODOs)
 
