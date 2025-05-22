@@ -174,18 +174,20 @@ This is a significant step, as it validates the foundational component for provi
 
 [ ] 2.6. Investigate and Validate Sourcemap Accuracy & Mapping Logic:
     - **Current Status**:
-        - `doHover` (on declaration `randomInt` and on object property `value`) and `getCompletions` (basic scope) tests are PASSING.
-        - Multiple other tests, including `getDefinitions` for `randomInt` call site, `getDefinitions` for `complexObject.nested.anotherNum`, `getCompletions` for nested object properties, and several `doHover` and `getDefinitions` tests related to conditional variable assignments, are FAILING (currently 1 passing, 8 failing after `adjustTsPositionForLeadingNewline` fix).
-        - **Critical Finding: `scriptStartPosition` Discrepancy in Tests**:
-            - Log analysis reveals that `getCivetTagInfo` (or the underlying `document.positionAt` in the test environment) consistently calculates the `scriptStartPosition` as `{"line":1,"character":21}`.
-            - However, the actual Civet code content in `CivetPlugin.test.ts` starts on line 2 of the mock Svelte document (e.g., expected `{"line":2,"character":0}` or similar, depending on indentation).
-            - This incorrect `scriptStartPosition` invalidates the crucial first step of `svelteDocPositionToCivetContentRelative`, leading to incorrect inputs for `forwardMap` and cascading failures in most tests. The `adjustTsPositionForLeadingNewline` helper is functioning correctly but cannot compensate for this initial miscalculation.
-        - Investigation continues to pinpoint if remaining failures are due to sourcemap issues, mapping logic subtleties, or test case inaccuracies (positioning, assertions).
-    - **Current Status**: After refining `remapPosition`'s tie-breaking logic (preferring smaller original column on generated column ties), we now have **3 passing tests** (`doHover` for variable declaration, `doHover` for object property, and `getCompletions` for basic scope) and 6 failing tests. This is an improvement from the previous 2 passing tests. The successful changes include:
-            *   Correctly identifying and stripping a leading blank line from Civet content before compilation (`originalContentLineOffset` logic).
-            *   Fixing an `indexOf` check for `\n` to correctly handle newline characters.
-            *   The aforementioned refinement to `remapPosition`'s tie-breaker for original column.
-        - The `scriptStartPosition` miscalculation in the test environment and inherent sourcemap inaccuracies from the Civet compiler for certain constructs remain the primary suspects for the majority of the 6 remaining failing tests.
+        - **Test Progress**: We now have **5 passing tests** and 4 failing tests, a significant improvement from the initial 1 passing test.
+        - **Passing Tests**:
+            1. `doHover - should provide hover info for a variable in Civet code` (basic variable declaration)
+            2. `doHover - on object property \`value\`` (object property hover)
+            3. `getCompletions - should provide completions for variables in scope` (basic scope completion)
+            4. `getDefinitions - should provide definition for a function called in Civet code` (function definition lookup)
+            5. `doHover - on string literal in \`simpleString\` assignment in IF block` (string literal hover)
+        - **Failing Tests**:
+            1. `getDefinitions - for object property \`anotherNum\` accessed via \`complexObject.nested.anotherNum\` in \`finalValue\``
+            2. `getCompletions - inside object \`complexObject.nested.\` for \`prop\` and \`anotherNum\``
+            3. `doHover - on \`conditionalVar\` assignment inside IF block`
+            4. `getDefinitions - for \`conditionalVar\` used in ELSE block (defined outside)`
+        - The `scriptStartPosition` miscalculation in the test environment and inherent sourcemap inaccuracies from the Civet compiler for certain constructs remain the primary suspects for the majority of the 4 remaining failing tests.
+
     - **Deep Dive Analysis of `getDefinitions` Failure & Sourcemap Data**:
         - Civet target: `dice := ran*d*omInt(1,6)` (Civet content line 7, col 8, 0-indexed, targeting 'd').
         - Compiled TS: `const d*i*ce = randomInt(1,6);` (TS line 7, 0-indexed).
@@ -197,69 +199,30 @@ This is a significant step, as it validates the foundational component for provi
         - When `forwardMap` is called with the *correct* Civet position `(line 7, col 8)` (0-indexed) for `randomInt` in `dice := randomInt(1,6)`, it cannot find a relevant mapping because the transformed sourcemap entries for TS line 7 point to Civet line 12.
         - If `forwardMap` were to (incorrectly) find a match based on the flawed transformed data, it would return a TS position that is on TS line 7 but corresponds to a Civet position far from the actual call site.
         - **Conclusion for `getDefinitions` failure**: The failure is definitively due to an incorrect `original_line_delta` in the raw sourcemap data produced by the `@danielx/civet.compile` version used. This causes `transformCivetSourcemapLines` to generate `SourceMapLinesEntry[]` that map the relevant TS code to the wrong original Civet lines. Our `forwardMap` logic itself correctly processes the (transformed but still flawed) data presented to it but cannot overcome the fundamental misattribution of original source lines.
-
-    - **Analysis of `scriptStartPosition` and Test Environment (Post-Logging)**:
-        - **Finding 1 (Test Data Structure)**: The `complexCivetSourceCode` string in `CivetPlugin.test.ts` begins with a leading newline character (`\n`) before the `<script lang="civet">` tag.
-        - **Finding 2 (`scriptInfo.startPos` Calculation)**: `document.scriptInfo.startPos` (which becomes `scriptStartPosition` in `CivetPlugin`) is correctly calculated by the test environment's `document.positionAt()` method. For example, if the `<script lang="civet">` tag is on line 1 (0-indexed) due to the leading newline, and the tag itself is 21 characters long, `scriptStartPosition` will be `{line: 1, character: 21}`. This points to the position immediately *after* the opening script tag.
-        - **Finding 3 (Actual Civet Code Start in Test String)**: The first line of actual Civet code within the test string (e.g., `randomInt := ...`) might be on a subsequent line (e.g., line 2, character 0, if there's another newline after the script tag opening).
-        - **Finding 4 (`originalContentLineOffset` Correctness)**: The `originalContentLineOffset` logic in `CivetPlugin.handleDocumentChange`, which strips a leading newline *from the extracted Civet content itself* before compilation, is functioning correctly.
-        - **Finding 5 (Coordinate Transformation Soundness)**: The initial coordinate transformations in `CivetPlugin` (e.g., `svelteDocPositionToCivetContentRelative` followed by adjustments using `originalContentLineOffset`) are logically sound and correctly map Svelte document positions from the test file to 0-indexed positions relative to the *stripped and compiled* Civet code, based on the current test data structure and the calculated `scriptStartPosition`.
-        - **Conclusion on `scriptStartPosition` Discrepancy**: The previously noted "discrepancy" in `scriptStartPosition` is not an error in its calculation but a direct consequence of the `complexCivetSourceCode` test string's structure (specifically, the leading newline). The `scriptStartPosition` correctly reflects the start of the script content placeholder relative to this structure. The plugin's internal logic correctly uses this along with `originalContentLineOffset` to prepare coordinates for `forwardMap`. The root causes for most remaining test failures are more likely linked to upstream sourcemap quality or TS service behavior with those maps, rather than an incorrect `scriptStartPosition`. The diagnostic logs added to investigate this have served their purpose and can be removed.
-            I'm now revisiting the core mapping logic, specifically the forwardMap function. I've re-examined the code in util.mts and confirmed that my initial interpretation of how it handles deltas was correct. The key insight is that the Civic LSP's forwardMap relies on absolute positions when dealing with segments, which simplifies its delta handling. I'm focusing on validating this assumption and comparing it directly to our implementation. I'm also confirming that my assumption about the remapPosition function import from @danielx/civet/ts-diagnostic is correct.
-
-    - **Analysis of Mapping Functions (Our Logic vs. Civet LSP's)**:
-        - Our `transformCivetSourcemapLines` (in `CivetPlugin.ts`): Correctly decodes VLQ `delta` segments from raw `SourceMap['lines']` and accumulates them to produce absolute positions in `SourceMapLinesEntry[]`.
-        - Our `forwardMap` (in `CivetPlugin.ts`): Consumes `SourceMapLinesEntry[]`. Finds a `bestMatch` sourcemap entry based on original line/column and extrapolates character offsets. This is standard.
-        - Civet LSP's `forwardMap` (in `Civet-sourcemap/lsp/source/lib/util.mts`): Consumes raw `SourceMap['lines']` (`number[][][]`, all 0-indexed, representing deltas) directly. It iterates, reconstructs absolute positions on the fly by accumulating deltas, finds the best segment, and then applies the same extrapolation logic as ours: `genOffset = foundGenOffset + (targetOrigOffset - foundBestOrigOffset)`.
-        - **Finding**: Both our mapping pipeline (delta decoding + extrapolation) and Civet LSP's direct delta processing with extrapolation are standard and sound. The critical difference in outcome for `getDefinitions` is not the mapping *method* but the *input sourcemap data quality*. If the `original_line_delta` in the raw sourcemap is wrong, any correct processing of that delta will lead to an incorrect final mapping.
-        - **Conclusion on Mapping Logic**: With the latest refinement to `remapPosition` (preferring smaller original column when generated columns are identical), our mapping functions (`transformCivetSourcemapLines`, `forwardMap`, `remapPosition`) are demonstrating increased robustness and correctness when processing the sourcemap data provided by the Civet compiler. The positive impact on test results confirms the soundness of this refined approach. The primary focus for addressing the remaining test failures now shifts more decisively towards investigating the test environment setup (specifically `scriptStartPosition`) and acknowledging limitations imposed by any inaccuracies in the sourcemaps generated by `@danielx/civet.compile` itself.
     
-    - **New Observation (TS Service Behavior)**: Some failing tests (e.g., for hover on assignments within conditional blocks) suggest that even when `forwardMap` provides a TS position that seems correct (correct line, reasonable character), the TypeScript language service might be returning information for an unrelated token. This needs further investigation and could point to more subtle sourcemap interaction issues or how TS interprets context from sourcemapped code.
+    - **Analysis of `scriptStartPosition` and Test Environment (Post-Logging)**:
+        - Log analysis confirms that `document.scriptInfo.startPos` in the test environment correctly identifies the script tag start as `{"line":1,"character":21}`.
+        - The actual Civet code content in the test starts with a blank line, which creates an offset between the script tag position and the actual code content.
+        - **Key Breakthrough**: We implemented detection and stripping of leading blank lines in Civet content before compilation, tracking this via `originalContentLineOffset`. This ensures the compiled TypeScript and sourcemap are based on "normalized" Civet code (no leading blanks), while we adjust positions during mapping to account for this offset.
+        - This approach mirrors how the Civet extension handles similar issues, and proved crucial for improving test pass rate.
 
-    - **Suspected Test Environment Issue**: There's a possibility of a synchronization issue where the test runner executes against a slightly older version of the test file than what's saved, leading to confusing log outputs where test parameters don't match the latest code. This needs to be ruled out. **Update**: This seems less likely now after multiple clean runs, but careful attention to test parameters remains crucial.
+    - **Strategic Mapping Improvements**:
+        1. **Blank Line Handling**: Detecting and stripping leading blank lines before compilation, tracking this via `originalContentLineOffset`. This ensures the compiled TypeScript and sourcemap are based on "normalized" Civet code (no leading blanks), while we adjust positions during mapping to account for this offset.
+        2. **Tie-Breaking Refinement**: When multiple sourcemap segments map to the same generated position, we now prioritize the segment with the smaller original column. This improved accuracy for token-level operations.
+        3. **Civet LSP Alignment**: We adopted mapping strategies from the Civet extension's own `util.mts`, particularly for `forwardMap` and `remapPosition`, which handle sparse maps more robustly.
+        4. **TypeScript Position Adjustment**: Added `adjustTsPositionForLeadingNewline` to handle cases where TypeScript's compiled output might include leading newlines not represented in sourcemaps.
+        5. **Extracted Mapping Utilities**: Moved mapping functions to a dedicated `civetUtils.ts` file, closely mirroring the Civet extension's implementation. This ensures we benefit from the same battle-tested algorithms that make the Civet extension so effective.
 
-    - **Coordinate System Discrepancy with Language Service Host**:
-        - **Finding**: It was discovered that the `CivetLanguageServiceHost` (specifically, the underlying TypeScript `LanguageService` or `ScriptSnapshot` behavior it uses) prepends a newline character (`\n`) to the TypeScript code it manages. This is a common practice for TS services.
-        - **Issue**: The `sourcemapLines` used for mapping are generated directly from the `@danielx/civet.compile` output, which does *not* include this leading newline.
-        - When the TS service provides a `textSpan` (e.g., for hover or definitions), its `start` offset is relative to this newline-prefixed code. Our `offsetToPosition` helper function correctly converts this offset to a 0-indexed `Position` (e.g., `{line: 1, character: X}` for what is conceptually the first line of actual code, because `line: 0` in this coordinate system represents the prepended blank line).
-        - This `Position` (e.g., `{line: 1, character: X}`) is then used in `remapPosition(sourcemapLines, tsPosition)`. However, `sourcemapLines` expects `tsPosition` to be relative to the original, non-prefixed compiled code (where the first actual line of code would be `line: 0`).
-        - This discrepancy leads to an off-by-one error in the line number during the `remapPosition` step, causing incorrect mappings back to the Svelte/Civet document, particularly affecting the accuracy of ranges for features like hover.
-        - **Planned Fix**: A helper function will be introduced to detect if the host's code had a leading newline. If so, the TypeScript `Position` obtained from `offsetToPosition` will have its line number decremented by 1 before being passed to `remapPosition`. This adjustment will align the coordinate systems, ensuring accurate remapping. This fix will be applied in `doHover`, `getDefinitions`, and `getCompletions`. **Update**: This (`adjustTsPositionForLeadingNewline`) has been implemented and appears to be working correctly based on logs, but the `scriptStartPosition` issue is a more fundamental blocker.
+    - **Remaining Challenges**:
+        1. **Nested Property Access**: TypeScript service doesn't always provide definitions or completions for deeply nested property access chains (`complexObject.nested.anotherNum`).
+        2. **Control Flow Mapping**: Sourcemaps for conditional blocks (if/else) sometimes lack the granularity needed for precise token mapping.
+        3. **Sourcemap Accuracy**: Some failures stem from inaccuracies in the raw sourcemap data from the Civet compiler itself, which our mapping logic cannot fully overcome.
 
-    - **Next Steps (Item 2.6)**:
-        a) **[CRITICAL PRIORITY]** Investigate and correct the `scriptStartPosition` calculation in the test environment (`CivetPlugin.test.ts`).
-            - Analyze how `doc.scriptInfo.startPos` is determined in the test setup.
-            - Debug `document.positionAt` behavior or the `svelteContent.indexOf(complexCivetSourceCode)` logic if it's yielding an offset that incorrectly maps to `{"line":1,"character":21}`.
-            - Ensure the `complexCivetSourceCode` string in tests doesn't have hidden leading/trailing characters affecting offset calculations.
-        b) **[VERIFIED & REFINED - NO CHANGE NEEDED FOR NOW]** `transformCivetSourcemapLines` correctly processes valid VLQ delta-based sourcemap segments from `@danielx/civet.compile`. The issue is not in our decoding but in the delta values themselves for certain Civet constructs in the compiler version used.
-        c) Given the faulty `original_line_delta` from `@danielx/civet.compile` for the `randomInt(1,6)` call site (and potentially other constructs):
-           - Option 1: Accept this as a current limitation for `getDefinitions` for such Civet constructs. The `svelte-language-server` cannot fix sourcemaps if the compiler provides incorrect deltas.
-           - Option 2 (Out of scope for `svelte-language-server`): Report this specific sourcemap inaccuracy (incorrect `original_line_delta` for call expressions following multi-line constructs or empty lines) upstream to the Civet compiler project.
-           - Option 3 (Complex/Fragile, Not Recommended): Attempt to build heuristics into `transformCivetSourcemapLines` or `forwardMap` to "guess" and "correct" suspicious delta values. This is highly unreliable and not a scalable solution.
-        d) **Decision for Upstream Sourcemap Issues**: No further changes will be made to `transformCivetSourcemapLines` or `forwardMap` regarding the `getDefinitions` failure for `randomInt(1,6)` (and similar upstream issues). The root cause is external to `svelte-language-server`. Our mapping implementation is considered correct for valid sourcemap inputs.
-        e) **Re-evaluate Test Failures Post-`scriptStartPosition` Fix**: After `scriptStartPosition` is corrected, re-run tests. Analyze logs to distinguish failures due to our logic versus those due to upstream sourcemap issues. **Update**: The `scriptStartPosition` calculation was verified as correct for the given test data structure. The focus remains on upstream sourcemap issues and TS service interaction for remaining failures.
-        f) **Focus on Test Case Accuracy (Post-Fix)**: For any persisting failures not attributable to known upstream issues, meticulously verify test case parameters (source code, Svelte document positions, expected TS positions, and assertions).
-
-    d) **Strategy for Sourcemap Limitations and Feature Robustness**:
-        - **Confirmed Limitation**: The accuracy of LSP features for Civet code within Svelte is fundamentally dependent on the sourcemap quality from `@danielx/civet.compile`. Specific issues, like incorrect `original_line_delta` values in the raw sourcemap, can lead to failures in features like `getDefinitions` for affected code constructs, as these map generated TS code to entirely incorrect original Civet lines.
-        - **Our Robust Processing**: `svelte-language-server`'s `transformCivetSourcemapLines` correctly processes VLQ delta-based sourcemaps, and `forwardMap`/`remapPosition` correctly utilize this transformed data using standard best-match and extrapolation techniques. Our pipeline is sound for valid or near-valid sourcemaps.
-        - **Hypothesized Feature Success (High Confidence)**:
-            - **`doHover`**: Likely to work well in most cases. Minor column inaccuracies are often handled by extrapolation, and hover information is generally robust to slight range deviations. (Currently PASSING for declarations).
-            - **`getCompletions`**: Likely to work well. Completion context is often broader than a single character, and TS is good at providing relevant items. Replacement span remapping depends on `remapPosition`, which is sound for correct-line mappings. (Currently PASSING for call sites).
-            - **Diagnostics (Error Reporting)**: Civet syntax errors (from compiler) will be accurate. TS errors found in compiled Civet code will be accurately remapped if the sourcemap points to the correct original Civet line.
-        - **Hypothesized Feature Success (Moderate Confidence/Potential Issues due to Sourcemaps)**:
-            - **`getDefinitions`**: Will work if the sourcemap correctly maps the TS construct to the correct original Civet line and a reasonably accurate column. Will FAIL if `original_line_delta` (or similar fundamental mapping data) is wrong, as seen with the `randomInt(1,6)` call site. (Currently FAILING for this specific call site).
-            - **`getReferences` (Find All References)**: Accuracy of remapping each reference from TS back to Civet will depend on the sourcemap quality for each specific reference site. Shares similar risks as `getDefinitions`.
-            - **`rename`**: Relies heavily on accurate `getReferences` and precise range mapping. Will share the same success/failure modes based on sourcemap quality at each reference location.
-        - **Our Strategic Approach**:
-            - **Prioritize Robustness in Our Code**: We will *not* implement speculative "fixes" or heuristics within `svelte-language-server` to try and guess or correct fundamentally flawed sourcemap data from the Civet compiler. Such approaches are unmaintainable.
-            - **Implement Features Faithfully**: Proceed with implementing all planned LSP features using our current sound mapping pipeline, which relies on the sourcemaps provided.
-            - **Test-Driven Identification of Upstream Issues**: Utilize comprehensive tests (e.g., `CivetPlugin.test.ts`) to identify specific Civet constructs or scenarios where `@danielx/civet.compile` produces inaccurate sourcemaps.
-            - **Document and Facilitate Upstream Reporting**: For each fundamental sourcemap issue identified (like the `original_line_delta` problem):
-                1. Document it clearly (e.g., in this document or a dedicated issue tracker for `svelte-language-server` limitations due to upstream bugs).
-                2. Encourage and facilitate (as maintainers/community) reporting these specific, reproducible sourcemap bugs to the Civet compiler project with minimal test cases.
-            - **Graceful Degradation (Implicit)**: For features within Civet `<script>` tags, if a feature provides an incorrect result or fails (e.g., `getDefinitions` returning no results or wrong results) due to a bad sourcemap from the compiler, this is the experienced behavior. We will *not* implement a secondary fallback mapping strategy *within* the Civet-to-TS pipeline itself, as our current pipeline *is* the direct and most accurate way to leverage the TS service with the given sourcemaps.
-            - **User Experience Expectation**: Users should experience highly accurate LSP features for Civet code where the Civet compiler's sourcemaps are correct. For Civet constructs that result in faulty sourcemaps, the LSP experience for those specific features at those specific code locations will be degraded (e.g., go-to-definition might not work or go to an unexpected location).
+    - **Path Forward**:
+        1. Continue refining position mapping for edge cases, particularly for nested properties and control flow constructs.
+        2. Consider implementing special-case handling for common patterns where sourcemaps are known to be inaccurate.
+        3. Explore if newer versions of `@danielx/civet` provide more accurate sourcemaps for problematic constructs.
+        4. Document known limitations and edge cases for users.
 
 
 

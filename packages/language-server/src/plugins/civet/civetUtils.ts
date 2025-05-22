@@ -48,42 +48,43 @@ export function forwardMap(sourcemapLines: SourcemapLines, position: Position): 
 
 /**
  * Maps a position in the generated TypeScript code back to the original Civet source.
+ * Direct port of the implementation from @danielx/civet/ts-diagnostic.
  */
 export function remapPosition(sourcemapLines: SourcemapLines, position: Position): Position {
   assert('line' in position, 'position must have line');
   assert('character' in position, 'position must have character');
 
-  const genLine1 = position.line + 1;
-  let bestMatch: { generatedLine: number; generatedColumn: number; originalLine: number; originalColumn: number } | null = null;
-
-  // Build absolute entries from raw sourcemapLines
-  const entries: Array<{ generatedLine: number; generatedColumn: number; originalLine: number; originalColumn: number }> = [];
-  sourcemapLines.forEach((lineArr, i) => {
-    let col = 0;
-    lineArr.forEach(mapping => {
-      col += mapping[0];
-      if (mapping.length === 4) {
-        const [/*genColDelta*/, _srcIdx, origLine, origCol] = mapping;
-        entries.push({ generatedLine: i + 1, generatedColumn: col, originalLine: origLine + 1, originalColumn: origCol });
-      }
-    });
-  });
-
-  for (const entry of entries) {
-    if (entry.generatedLine === genLine1 && entry.generatedColumn <= position.character) {
-      if (
-        !bestMatch ||
-        entry.generatedColumn > bestMatch.generatedColumn ||
-        (entry.generatedColumn === bestMatch.generatedColumn && entry.originalColumn < bestMatch.originalColumn)
-      ) {
-        bestMatch = entry;
-      }
+  if (!sourcemapLines) return position;
+  
+  const { line, character } = position;
+  const textLine = sourcemapLines[line];
+  if (!textLine?.length) return position;
+  
+  let i = 0, p = 0, l = textLine.length;
+  let lastMapping, lastMappingPosition = 0;
+  
+  while (i < l) {
+    const mapping = textLine[i];
+    p += mapping[0];
+    if (mapping.length === 4) {
+      lastMapping = mapping;
+      lastMappingPosition = p;
     }
+    if (p >= character) {
+      break;
+    }
+    i++;
   }
-
-  if (bestMatch) {
-    const charOffset = position.character - bestMatch.generatedColumn;
-    return { line: bestMatch.originalLine - 1, character: bestMatch.originalColumn + charOffset };
+  
+  if (lastMapping) {
+    const srcLine = lastMapping[2];
+    const srcChar = lastMapping[3];
+    const newChar = srcChar + character - lastMappingPosition;
+    return {
+      line: srcLine,
+      character: newChar
+    };
+  } else {
+    return position;
   }
-  return position;
 } 
