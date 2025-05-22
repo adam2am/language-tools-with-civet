@@ -153,5 +153,59 @@ z := x + param
         });
     });
 
+    describe('Complex scenarios', () => {
+        let host: CivetLanguageServiceHost;
+        const complexTestSvelteFileUri = 'file:///test-complex-scenario.svelte';
+
+        const complexCivetSourceCode = `
+// Generate a random integer between min (inclusive) and max (inclusive)
+randomInt := (min: number, max: number): number =>
+  Math.floor(Math.random() * (max - min + 1)) + min
+
+// Roll a dice (1-6)
+dice := randomInt(1, 6)
+
+// Check if dice roll is less than 3
+if dice < 3
+  console.log "Less than three"
+else
+  console.log "More than or equal to three"
+        `;
+
+        let compiledTsCodeForComplexScenario: string;
+        let transformedMapLinesForComplexScenario: SourceMapLinesEntry[];
+
+        before(() => {
+            const compileResult = civet.compile(complexCivetSourceCode, {
+                filename: complexTestSvelteFileUri,
+                sync: true,
+                sourceMap: true,
+                inlineMap: false,
+                js: false
+            });
+            compiledTsCodeForComplexScenario = compileResult.code;
+            console.log('\n--- Compiled TypeScript for Complex Scenario ---\n', compiledTsCodeForComplexScenario);
+            console.log('--- End Compiled TypeScript ---\n');
+
+            if (compileResult.sourceMap && compileResult.sourceMap.lines) {
+                transformedMapLinesForComplexScenario = transformCivetSourcemapLines(compileResult.sourceMap.lines);
+            } else {
+                transformedMapLinesForComplexScenario = [];
+            }
+        });
+
+        beforeEach(() => {
+            host = new CivetLanguageServiceHost();
+            host.updateCivetFile(complexTestSvelteFileUri, compiledTsCodeForComplexScenario, transformedMapLinesForComplexScenario);
+        });
+
+        // TODO: Add specific tests for quick info, definitions, completions for tokens in complexCivetSourceCode
+        it('should have compiled code for complex scenario', () => {
+            assert.ok(compiledTsCodeForComplexScenario, "Compiled TS code for complex scenario should exist");
+            assert.ok(compiledTsCodeForComplexScenario.length > 0, "Compiled TS code for complex scenario should not be empty");
+        });
+
+    });
+
     // TODO: Phase 2 tests involving forwardMap/remapPosition for Svelte/Civet positions.
 }); 
