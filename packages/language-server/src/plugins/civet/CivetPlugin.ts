@@ -35,6 +35,7 @@ import { SelectionRangeProviderImpl } from '../typescript/features/SelectionRang
 import { CivetLanguageServiceHost, SourceMapLinesEntry } from '../../typescriptServiceHost';
 import { scriptElementKindToCompletionItemKind } from '../typescript/utils';
 import * as ts from 'typescript';
+import { remapPosition as civetRemapPosition, forwardMap as civetForwardMap } from './civetUtils';
 
 
 
@@ -106,57 +107,10 @@ interface MappingPosition {
     character: number; // 0-indexed
 }
 
-export function forwardMap(sourcemapLines: SourceMapLinesEntry[], originalPosition: MappingPosition): MappingPosition {
-    // console.log(`[forwardMap] Input: originalPosition=${JSON.stringify(originalPosition)}`); // Kept for potential debugging
-    if (!sourcemapLines || sourcemapLines.length === 0) {
-        return originalPosition;
-    }
-
-    const originalLine0Indexed = originalPosition.line; // Already 0-indexed
-
-    let bestMatchEntry: SourceMapLinesEntry | null = null;
-    // Criteria for best match from Civet LSP's forwardMap:
-    // - srcLine <= origLine
-    // - If srcLine > bestLine (closer to origLine from below)
-    // - OR srcLine === bestLine AND srcOffset <= origOffset AND srcOffset >= bestOffset (closer or equal column on the same best line)
-    
-    // Our SourceMapLinesEntry uses 1-indexed originalLine, so adjust target
-    const targetOriginalLine1Indexed = originalLine0Indexed + 1;
-
-    for (const entry of sourcemapLines) {
-        // Entry originalLine is 1-indexed, originalColumn is 0-indexed
-        if (entry.originalLine <= targetOriginalLine1Indexed) {
-            if (entry.originalLine > (bestMatchEntry?.originalLine ?? -1)) { // Found a line closer to (or at) the target original line from below
-                if (entry.originalColumn <= originalPosition.character) { // And the column is at or before the target character
-                    bestMatchEntry = entry;
-                }
-            } else if (entry.originalLine === bestMatchEntry?.originalLine) { // Same best line
-                if (entry.originalColumn <= originalPosition.character && entry.originalColumn >= (bestMatchEntry?.originalColumn ?? -1)) {
-                    bestMatchEntry = entry;
-                }
-            }
-        }
-    }
-
-    if (bestMatchEntry) {
-        // console.log(`[forwardMap] Best match: ${JSON.stringify(bestMatchEntry)}`);
-        // bestMatchEntry.originalLine is 1-indexed, originalPosition.line is 0-indexed
-        // bestMatchEntry.originalColumn is 0-indexed, originalPosition.character is 0-indexed
-        const lineDelta = originalPosition.line - (bestMatchEntry.originalLine - 1);
-        const charDelta = originalPosition.character - bestMatchEntry.originalColumn;
-
-        const mappedPosition = {
-            line: (bestMatchEntry.generatedLine - 1) + lineDelta, // generatedLine is 1-indexed, convert to 0-indexed
-            character: Math.max(0, bestMatchEntry.generatedColumn + charDelta) // generatedColumn is 0-indexed
-        };
-        // console.log(`[forwardMap] Mapped to: ${JSON.stringify(mappedPosition)}`);
-        return mappedPosition;
-    } else {
-        // console.log("[forwardMap] No suitable mapping found. Returning original position.");
-        return originalPosition; // Fallback if no match
-    }
-}
-
+// Local remapPosition - kept as it uses SourceMapLinesEntry[] from cache which is already transformed
+// This is EXPORTED because CivetLanguageServiceHost also needs to remap positions from TS to Civet
+// when providing diagnostics, for example. Or it would if it were doing that yet.
+// For now, its main use is within CivetPlugin for LSP features.
 export function remapPosition(sourcemapLines: SourceMapLinesEntry[], generatedPosition: MappingPosition): MappingPosition {
     console.log(`[remapPosition] Input: generatedPosition=${JSON.stringify(generatedPosition)}`);
     if (!sourcemapLines || sourcemapLines.length === 0) {
@@ -288,7 +242,7 @@ export class CivetPlugin implements
     private completionsProvider: CompletionsProviderImpl;
     private codeActionsProvider: CodeActionsProviderImpl;
     private selectionRangeProvider: SelectionRangeProviderImpl;
-    private compiledCivetCache = new Map<string, { version: number, compiledTsCode: string, sourcemapLines: SourceMapLinesEntry[], originalContentLineOffset: number }>();
+    private compiledCivetCache = new Map<string, { version: number, compiledTsCode: string, sourcemapLines: SourceMapLinesEntry[], rawSourcemapLines: number[][][], originalContentLineOffset: number }>();
 
     constructor(
         private configManager: LSConfigManager, 
@@ -337,7 +291,7 @@ export class CivetPlugin implements
         let civetContentPosition = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
         console.log(`[CivetPlugin] doHover initial civetContentPosition=${JSON.stringify(civetContentPosition)}`);
 
-        const { sourcemapLines, originalContentLineOffset, compiledTsCode } = cached;
+        const { sourcemapLines, originalContentLineOffset, compiledTsCode, rawSourcemapLines } = cached;
 
         if (originalContentLineOffset > 0) {
             civetContentPosition = { 
@@ -348,7 +302,7 @@ export class CivetPlugin implements
         }
 
         console.log(`[CivetPlugin] doHover sourcemapLines count=${sourcemapLines.length}`);
-        const tsPosition = forwardMap(sourcemapLines, civetContentPosition);
+        const tsPosition = civetForwardMap(rawSourcemapLines, civetContentPosition);
         console.log(`[CivetPlugin] doHover mapped tsPosition=${JSON.stringify(tsPosition)}`);
 
         if (!this.civetLanguageServiceHost) {
@@ -397,16 +351,19 @@ export class CivetPlugin implements
                 const tsStartPos = adjustTsPositionForLeadingNewline(tsStartPosUnadjusted, hostTsCode);
                 console.log(`[doHover-DEBUG] tsStartPos adjusted for leading newline: ${JSON.stringify(tsStartPos)}`);
                 
-                let remappedContentStart = remapPosition(sourcemapLines, tsStartPos);
+                let remappedContentStart = civetRemapPosition(cached.rawSourcemapLines, tsStartPos);
                 if (originalContentLineOffset > 0) {
                     remappedContentStart = { line: remappedContentStart.line + originalContentLineOffset, character: remappedContentStart.character };
                     console.log(`[CivetPlugin] doHover adjusted remappedContentStart for stripped lines: ${JSON.stringify(remappedContentStart)}`);
                 }
 
-                const remappedContentEnd = {
-                    line: remappedContentStart.line,
-                    character: remappedContentStart.character + quickInfo.textSpan.length
-                };
+                const tsEndPosUnadjusted = offsetToPosition(quickInfo.textSpan.start + quickInfo.textSpan.length);
+                const tsEndPos = adjustTsPositionForLeadingNewline(tsEndPosUnadjusted, hostTsCode);
+                let remappedContentEnd = civetRemapPosition(cached.rawSourcemapLines, tsEndPos);
+                if (originalContentLineOffset > 0) {
+                    remappedContentEnd = { line: remappedContentEnd.line + originalContentLineOffset, character: remappedContentEnd.character };
+                    console.log(`[CivetPlugin] doHover adjusted remappedContentEnd for stripped lines: ${JSON.stringify(remappedContentEnd)}`);
+                }
                 
                 const svelteDocStart = civetContentPositionToSvelteDocRelative(remappedContentStart, scriptStartPosition);
                 const svelteDocEnd = civetContentPositionToSvelteDocRelative(remappedContentEnd, scriptStartPosition);
@@ -431,9 +388,9 @@ export class CivetPlugin implements
 
         const cached = this.compiledCivetCache.get(document.uri);
         console.log(`[CivetPlugin] getCompletions cached entry present: ${!!cached}`);
-        if (!cached || !cached.sourcemapLines || !cached.compiledTsCode) {
-            console.log(`[CivetPlugin] getCompletions fallback logic (no cache/sourcemap/TS code)`);
-        if (document.getLanguageAttribute('script') !== 'civet') {
+        if (!cached || !cached.compiledTsCode) { // Check compiledTsCode as rawSourcemapLines might exist with no code
+            console.log(`[CivetPlugin] getCompletions fallback logic (no cache/TS code)`);
+            if (document.getLanguageAttribute('script') !== 'civet') {
                 return this.completionsProvider.getCompletions(document, position, completionContext);
             }
             return null;
@@ -450,7 +407,12 @@ export class CivetPlugin implements
         let civetContentPosition = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
         console.log(`[CivetPlugin] getCompletions initial civetContentPosition=${JSON.stringify(civetContentPosition)}`);
 
-        const { sourcemapLines, compiledTsCode, originalContentLineOffset } = cached;
+        const { compiledTsCode, originalContentLineOffset, rawSourcemapLines } = cached; // Ensure rawSourcemapLines is destructured
+
+        if (!rawSourcemapLines) { // Explicit check for rawSourcemapLines
+            console.warn(`[CivetPlugin] getCompletions: rawSourcemapLines missing from cache for ${document.uri}. Cannot map position.`);
+            return null;
+        }
 
         if (originalContentLineOffset > 0) {
             civetContentPosition = { 
@@ -460,8 +422,7 @@ export class CivetPlugin implements
             console.log(`[CivetPlugin] getCompletions adjusted civetContentPosition for stripped lines=${JSON.stringify(civetContentPosition)}`);
         }
         
-        console.log(`[CivetPlugin] getCompletions sourcemapLines count=${sourcemapLines.length}, compiledTsCode length=${compiledTsCode.length}`);
-        const tsPosition = forwardMap(sourcemapLines, civetContentPosition);
+        const tsPosition = civetForwardMap(rawSourcemapLines, civetContentPosition); // USE IMPORTED civetForwardMap
         console.log(`[CivetPlugin] getCompletions mapped tsPosition=${JSON.stringify(tsPosition)}`);
 
         if (!this.civetLanguageServiceHost) {
@@ -510,8 +471,8 @@ export class CivetPlugin implements
                 const tsStartPos = adjustTsPositionForLeadingNewline(tsStartPosUnadjusted, hostTsCode);
                 const tsEndPos = adjustTsPositionForLeadingNewline(tsEndPosUnadjusted, hostTsCode);
 
-                let remappedContentStart = remapPosition(sourcemapLines, tsStartPos);
-                let remappedContentEnd = remapPosition(sourcemapLines, tsEndPos);
+                let remappedContentStart = civetRemapPosition(cached.rawSourcemapLines, tsStartPos);
+                let remappedContentEnd = civetRemapPosition(cached.rawSourcemapLines, tsEndPos);
 
                 if (originalContentLineOffset > 0) {
                     remappedContentStart = { line: remappedContentStart.line + originalContentLineOffset, character: remappedContentStart.character };
@@ -669,6 +630,7 @@ export class CivetPlugin implements
                 version: currentVersion, 
                 compiledTsCode, 
                 sourcemapLines: finalSourcemapLines,
+                rawSourcemapLines: compileResult.sourceMap.lines,
                 originalContentLineOffset // Store the offset
             });
 
@@ -703,7 +665,7 @@ export class CivetPlugin implements
         let civetContentPosition = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
         console.log(`[CivetPlugin] getDefinitions initial civetContentPosition=${JSON.stringify(civetContentPosition)}`);
 
-        const { sourcemapLines, originalContentLineOffset } = cached;
+        const { sourcemapLines, originalContentLineOffset, rawSourcemapLines } = cached;
 
         if (originalContentLineOffset > 0) {
             civetContentPosition = { 
@@ -714,7 +676,7 @@ export class CivetPlugin implements
         }
 
         console.log(`[CivetPlugin] getDefinitions sourcemapLines count=${sourcemapLines.length}`);
-        const tsPosition = forwardMap(sourcemapLines, civetContentPosition);
+        const tsPosition = civetForwardMap(rawSourcemapLines, civetContentPosition);
         console.log(`[CivetPlugin] getDefinitions mapped tsPosition=${JSON.stringify(tsPosition)}`);
 
         if (!this.civetLanguageServiceHost) {
@@ -757,8 +719,8 @@ export class CivetPlugin implements
                     const tsStartPos = adjustTsPositionForLeadingNewline(tsStartPosUnadjusted, hostTsCode);
                     const tsEndPos = adjustTsPositionForLeadingNewline(tsEndPosUnadjusted, hostTsCode);
 
-                    let remappedContentStart = remapPosition(sourcemapLines, tsStartPos);
-                    let remappedContentEnd = remapPosition(sourcemapLines, tsEndPos);
+                    let remappedContentStart = civetRemapPosition(cached.rawSourcemapLines, tsStartPos);
+                    let remappedContentEnd = civetRemapPosition(cached.rawSourcemapLines, tsEndPos);
 
                     if (originalContentLineOffset > 0) {
                         remappedContentStart = { line: remappedContentStart.line + originalContentLineOffset, character: remappedContentStart.character };
