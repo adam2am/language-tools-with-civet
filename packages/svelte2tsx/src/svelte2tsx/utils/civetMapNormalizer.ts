@@ -1,69 +1,80 @@
-import { SourceMapGenerator, RawSourceMap } from 'source-map';
-// Explicitly import the synchronous BasicSourceMapConsumer
-import { BasicSourceMapConsumer } from 'source-map/lib/source-map-consumer';
+import { SourceMapGenerator, type RawSourceMap as StandardRawSourceMap } from 'source-map';
+import type { CivetLinesSourceMap } from './civetTypes';
 
 /**
- * Normalize a raw Civet sourcemap (from Civet snippet -> TS snippet)
- * to be a map from Original Svelte File -> TS snippet.
+ * Normalize a Civet-specific sourcemap (CivetLinesSourceMap, from Civet snippet -> TS snippet)
+ * to be a standard V3 RawSourceMap from Original Svelte File -> TS snippet.
  *
- * @param rawMap The raw V3 sourcemap from `civet.compile()`.
+ * @param civetMap The CivetLinesSourceMap containing the `lines` array from `civet.compile()`.
  * @param originalFullSvelteContent The full content of the original .svelte file.
  * @param originalCivetSnippetLineOffset_0based 0-based line number where the civet snippet started in the .svelte file.
- * @returns A RawSourceMap that maps from the original .svelte file to the compiled TS snippet.
+ * @param svelteFilePath The actual file path of the .svelte file (for the output sourcemap's `sources` and `file` fields).
+ * @returns A Standard V3 RawSourceMap that maps from the original .svelte file to the compiled TS snippet.
  */
 export function normalizeCivetMap(
-  rawMap: RawSourceMap,
+  civetMap: CivetLinesSourceMap,
   originalFullSvelteContent: string,
-  originalCivetSnippetLineOffset_0based: number
-): RawSourceMap {
-  // Determine the source path (should be the .svelte file) from the raw Civet map
-  const svelteFilePath = rawMap.sources && rawMap.sources.length > 0 && rawMap.sources[0] 
-    ? rawMap.sources[0] 
-    : (rawMap.file || 'unknown.svelte');
+  originalCivetSnippetLineOffset_0based: number,
+  svelteFilePath: string
+): StandardRawSourceMap {
 
-  const generator = new SourceMapGenerator({ file: rawMap.file || svelteFilePath });
+  const generator = new SourceMapGenerator({ file: svelteFilePath });
 
-  // Set the source content for the .svelte file
+  // Set the source content for the .svelte file.
   // This ensures the output map refers to the full original Svelte content.
   generator.setSourceContent(svelteFilePath, originalFullSvelteContent);
 
-  const consumer = new BasicSourceMapConsumer(rawMap);
+  // The `civetMap.lines` array contains segments which are:
+  // [generatedColumn_0based, sourceFileIndex_0based (relative to civetMap.sources if it existed), 
+  //  originalLine_0based_in_snippet, originalColumn_0based_in_snippet, 
+  //  optional_nameIndex_0based (relative to civetMap.names if it existed)]
+  // For CivetLinesSourceMap from our logs, sourceFileIndex is 0 (referring to civetMap.source)
+  // and there's no nameIndex (segments are 4-element arrays).
 
-  consumer.eachMapping((m) => {
-    if (m.originalLine == null || m.source == null) return;
+  if (civetMap.lines) {
+    civetMap.lines.forEach((lineSegments, generatedLine_0based) => {
+      if (!lineSegments) return;
 
-    // m.originalLine is 0-indexed relative to the Civet snippet content.
-    // Adjust to be 1-indexed relative to the start of the original .svelte file.
-    const finalOriginalLine_1based = m.originalLine + originalCivetSnippetLineOffset_0based + 1;
+      lineSegments.forEach(segment => {
+        if (!segment || segment.length < 4) return; // Ensure segment is valid
 
-    generator.addMapping({
-      // All original positions are from the svelteFilePath
-      source: svelteFilePath,
-      original: {
-        line: finalOriginalLine_1based,
-        column: m.originalColumn // 0-indexed column in original .svelte file
-      },
-      generated: {
-        // civet.compile's sourcemap provides 1-based generatedLine for its output TS.
-        // SourceMapGenerator also expects 1-based generated line.
-        line: m.generatedLine,
-        column: m.generatedColumn // 0-indexed column in generated TS snippet
-      },
-      name: m.name
+        const generatedColumn_0based = segment[0];
+        // segment[1] is sourceFileIndex, typically 0 for single-file snippet compilation
+        const originalLine_0based_in_snippet = segment[2];
+        const originalColumn_0based_in_snippet = segment[3];
+        // We assume no name mapping if segment has 4 elements, as seen in logs.
+        // If civetMap could have a `names` array and 5-element segments, this would need enhancement.
+        const name = (segment.length >= 5 && civetMap.names && typeof segment[4] === 'number') 
+                     ? civetMap.names[segment[4]] 
+                     : undefined;
+
+        // Adjust original line to be relative to the start of the original .svelte file.
+        const finalOriginalLine_1based_in_svelte = originalLine_0based_in_snippet + originalCivetSnippetLineOffset_0based + 1;
+
+        generator.addMapping({
+          source: svelteFilePath, // All original positions are from the .svelte file
+          original: {
+            line: finalOriginalLine_1based_in_svelte,
+            column: originalColumn_0based_in_snippet 
+          },
+          generated: {
+            line: generatedLine_0based + 1, // SourceMapGenerator expects 1-based generated line
+            column: generatedColumn_0based
+          },
+          name: name
+        });
+      });
     });
-  });
-  consumer.destroy();
+  }
 
-  const outputMap = generator.toJSON();
+  const outputMap = generator.toJSON(); // This is StandardRawSourceMap
 
-  // The generator, having been given svelteFilePath via `setSourceContent`
-  // and `source` in `addMapping`, should correctly set these in `toJSON()`.
-  // Explicitly ensuring here for robustness.
+  // Ensure `sources` and `sourcesContent` are correctly set in the final map.
+  // `setSourceContent` and using `svelteFilePath` in `addMapping` should handle this,
+  // but explicit reinforcement can be good.
   outputMap.sources = [svelteFilePath];
   outputMap.sourcesContent = [originalFullSvelteContent];
-  if (rawMap.file && !outputMap.file) {
-    outputMap.file = rawMap.file; // Preserve original file name from civet map if not set by generator
-  }
+  // outputMap.file should be svelteFilePath as per SourceMapGenerator({ file: svelteFilePath })
 
   return outputMap;
 } 

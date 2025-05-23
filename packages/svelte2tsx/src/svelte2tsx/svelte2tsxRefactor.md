@@ -40,6 +40,8 @@ This pivot aims to address the sourcemap and mapping challenges at the source (p
 
 ---
 
+
+
 ### How we go from chained V3 to TSService + forwardmap/remapposition
 
 Below are three possible approaches for wiring direct TSService mapping for Civet `<script>` blocks, rated on feasibility (1 = lowest, 10 = highest):
@@ -531,7 +533,7 @@ By splitting out the Civet workflow into its own mini-module, you:
 
 ## Phase Breakdown & Action Plan
 
-### Phase 1: Civet Preprocessor Module Setup
+### [] - Phase A1: Civet Preprocessor Module Setup
 1. Context
    - The current `index.ts` mixes Civet compilation, sourcemap parsing, and TSX generation, making maintenance and testing difficult.
 2. Idea
@@ -541,17 +543,70 @@ By splitting out the Civet workflow into its own mini-module, you:
    - B) Leverage `source-map` library for full map normalization (Rating: 9/10) – robust and aligns with best practices.
    - C) Hybrid: small helper + limited chaining in `index.ts` (Rating: 7/10) – moderate effort but still entwines logic.
 4. Relevant Files
-   - `src/svelte2tsx/civet/types.ts`
-   - `src/svelte2tsx/civet/compiler.ts`
-   - `src/svelte2tsx/civet/mapNormalizer.ts`
-   - `src/svelte2tsx/civet/preprocessor.ts`
-   - `src/svelte2tsx/civet/utils.ts`
+   [X] - `src/svelte2tsx/civet/types.ts`
+   [X] - `src/svelte2tsx/civet/compiler.ts`
+          ### Sourcemap Accuracy Investigation & `compileCivet` Utility Progress
+        As part of the preliminary work for the `civet2tsx` preprocessor, a utility `compileCivet` (within `packages/svelte2tsx/src/svelte2tsx/utils/civetCompiler.ts`) has been developed and tested. This utility wraps the `@danielx/civet` compiler.
+        |
+        **Key Developments:**
+        |
+        1.  **Dual Sourcemap Output:**
+            *   The `compileCivet` function was enhanced to optionally output two different sourcemap formats from the Civet compiler:
+                1.  **`CivetLinesSourceMap`**: This is the direct instance of Civet's internal `SourceMap` class. It contains a `lines` property (a `number[][][]` array representing pre-decoded mappings) and other Civet-specific metadata. This is the default output.
+                2.  **`StandardRawSourceMap`**: This is the standard V3 `RawSourceMap` object (with `version`, `sources`, `mappings` string, etc.), obtained by calling the `.json(filename, filename)` method on Civet's `SourceMap` instance.
+            *   Appropriate TypeScript types (`CivetLinesSourceMap`, `StandardRawSourceMap`, and a union `CivetOutputMap`) were defined in `civetTypes.ts` to handle these structures.
+        |
+        2.  **Accuracy Testing & Findings:**
+            *   Unit tests (`compileCivet.test.ts`) were created to compare these two sourcemap formats against compiled TypeScript output for different Civet inputs.
+            *   **Simple Civet Code** (e.g., `x := 42\ny .= x + 1`):
+                *   For straightforward, linear Civet code, both the `CivetLinesSourceMap` and the `StandardRawSourceMap` (V3) were found to be **equally accurate**. The decoded `mappings` from the V3 map perfectly matched the segments in the `lines` array of the `CivetLinesSourceMap`.
+            *   **Complex Civet Code (Stresstest)** (e.g., involving newlines, indentation, `if/else` blocks):
+                *   The compiled TypeScript output for the stresstest was logged:
+                    ```typescript
+                    // Civet Input:
+                    //   a := 1
+                    //   if a > 0 
+                    //     x := 42
+                    //   else
+                    //     y .= x + 1
+                    // 
+                    // Compiled TypeScript:
+                    const a = 1
+                    if (a > 0) { 
+                      const x = 42
+                    }
+                    else {
+                      let y = x + 1
+                    }
+                    ```
+                *   **Crucial Finding**: For this more complex input, the **`CivetLinesSourceMap` (direct `lines` array) proved to be VASTLY more accurate** than the `StandardRawSourceMap` (V3 via `.json()`).
+                *   The `CivetLinesSourceMap` correctly mapped tokens, including numeric literals and variables within expressions, to their original positions in the Civet source, aligning well with the actual TypeScript output.
+                *   The `StandardRawSourceMap` (V3) exhibited significant inaccuracies:
+                    *   Mis-mapping of numeric literals (e.g., `1`, `42` often mapped to the variable name on that line in Civet).
+                    *   Offset errors in mapping the start of declarations (e.g., `const` mapping to the Civet variable name).
+                    *   Incorrect mapping of variables within expressions (e.g., the `x` in `y = x + 1`).
+        |
+        **Implications for `civet2tsx` Preprocessor:**
+        |
+        *   The substantial accuracy difference in complex cases suggests that the process of serializing Civet's internal `SourceMap` to the standard V3 `mappings` string (via its `.json()` method) loses significant precision.
+        *   For the `civet2tsx` preprocessor to generate the most accurate end-to-end sourcemaps (Svelte -> Civet -> TS -> TSX), it might be necessary to:
+            1.  Work directly with the `lines` array from the `CivetLinesSourceMap` when processing the Civet-to-TS transformation.
+            2.  Develop a custom mechanism to convert this `CivetLinesSourceMap` (or its `lines` data) into a `StandardRawSourceMap` (V3) that can then be chained with the Svelte-to-TSX map, ensuring that the high precision of the `lines` data is preserved during this conversion.
+            3.  Alternatively, if contributing upstream to `@danielx/civet` is an option, exploring improvements to its `.json()` method to better preserve accuracy would be ideal.
+        *   Simply relying on the `.json()` output for complex Civet code will likely result in a suboptimal sourcemap for the final TSX, leading to a poor debugging experience for users.
+        |
+        This investigation underscores the importance of carefully handling the sourcemap data from the Civet compiler, especially its non-standard but more precise `lines` representation, to achieve the desired accuracy for the Svelte+Civet development experience.
+        |
+        ---
+  [] - `src/svelte2tsx/civet/mapNormalizer.ts`
+  [] - `src/svelte2tsx/civet/preprocessor.ts`
+  [] - `src/svelte2tsx/civet/utils.ts`
 5. Playtests & Test Types
    - Unit tests for `compileCivet()` to verify TS code output and raw map shape.
    - Unit tests for `normalizeCivetMap()` to assert correct mapping of a set of known offsets.
    - Integration test for `preprocessCivet()` on a minimal Svelte snippet containing Civet blocks, checking returned `code`, `module`, and `instance` metadata.
 
-### Phase 2: Integration in `index.ts`
+### Phase A2: Integration in `index.ts`
 1. Context
    - After preprocessing, `index.ts` must splice in TS code and chain sourcemaps to produce final TSX.
 2. Idea
@@ -570,7 +625,7 @@ By splitting out the Civet workflow into its own mini-module, you:
    - Use `source-map`'s `originalPositionFor` on the generated map to ensure click positions within TSX resolve back to original Svelte+Civet lines.
    - Snapshot tests for final code and mapped location pairs.
 
-### Phase 3: Testing, Benchmarking & CI
+### Phase A3: Testing, Benchmarking & CI
 1. Context
    - Guarantee correctness under real-world usage and manage performance characteristics.
 2. Idea

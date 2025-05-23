@@ -16,7 +16,8 @@ export interface CivetLinesSourceMap {
     srcOffset?: number; // Overall offset in source code
     srcTable?: number[]; // Table of source lengths, possibly
     source?: string; // Original source content
-    // This type typically does NOT have: version, sources, names, mappings, file
+    names?: string[]; // Added optional names array
+    // This type typically does NOT have: version, sources, mappings, file
 }
 
 /**

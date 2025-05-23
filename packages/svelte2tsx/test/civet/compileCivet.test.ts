@@ -3,14 +3,16 @@ import { compileCivet } from '../../src/svelte2tsx/utils/civetCompiler';
 import type { CivetLinesSourceMap, StandardRawSourceMap, CivetOutputMap } from '../../src/svelte2tsx/utils/civetTypes';
 
 describe('compileCivet', () => {
-  const civetCode = 'x := 42\ny .= x + 1';
+  const civetCode = '\n  a := 1\n  if a > 0 \n    x := 42\n  else\n    y .= x + 1\n  '; // Stresstest code
   const filename = 'TestCivetFile.civet';
 
   it('returns a CivetLinesSourceMap by default', () => {
     const result = compileCivet(civetCode, filename); // Default: outputStandardV3Map is false
+    console.log('\n--- CivetLinesSourceMap Test ---');
+    console.log('Compiled TypeScript:\n', result.code);
     console.log('Default (CivetLinesSourceMap) Output:', JSON.stringify(result.rawMap, null, 2));
 
-    assert.match(result.code, /const x = 42/);
+    assert.match(result.code, /const a = 1/);
     assert.match(result.code, /let y = x \+ 1/);
 
     const map = result.rawMap as CivetLinesSourceMap | undefined;
@@ -25,9 +27,11 @@ describe('compileCivet', () => {
 
   it('returns a StandardRawSourceMap when outputStandardV3Map is true', () => {
     const result = compileCivet(civetCode, filename, { outputStandardV3Map: true });
+    console.log('\n--- StandardRawSourceMap Test ---');
+    console.log('Compiled TypeScript:\n', result.code);
     console.log('Standard V3 Output:', JSON.stringify(result.rawMap, null, 2));
 
-    assert.match(result.code, /const x = 42/);
+    assert.match(result.code, /const a = 1/);
     assert.match(result.code, /let y = x \+ 1/);
 
     const map = result.rawMap as StandardRawSourceMap | undefined;

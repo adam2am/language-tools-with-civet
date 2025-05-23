@@ -1,0 +1,35 @@
+// 1 - Simple function in Civet syntax
+add := (a: number, b: number): number => a + b
+
+// 2 - Basic array operations
+processArray := (arr: number[]): number[] =>
+  arr
+    .filter (n) => n > 0
+    .map (n) => n * 2
+
+// 3 - Conditional expression
+getStatus := (value: number): string =>
+  if value > 10
+    "high"
+  else
+    "low"
+
+// 4 - Simple object creation
+createItem := (id: number): object =>
+  { id, name: `Item ${id}`, active: id % 2 is 0 }
+
+// 5 - Nested function call
+somethingNested := (arr: number[]): number[] =>
+    do {
+        a .= 1
+        do {
+            b .= a + 2
+            do {
+                c .= b + 3
+                do {
+                    console.log(c)
+                }
+            }
+        }
+        arr
+    }
