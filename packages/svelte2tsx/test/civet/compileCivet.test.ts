@@ -1,24 +1,43 @@
 import { strict as assert } from 'assert';
 import { compileCivet } from '../../src/svelte2tsx/utils/civetCompiler';
+import type { CivetLinesSourceMap, StandardRawSourceMap, CivetOutputMap } from '../../src/svelte2tsx/utils/civetTypes';
 
 describe('compileCivet', () => {
-  it('compiled Civet code to TypeScript and returns a sourcemap', async () => {
-    const civetCode = 'x := 42\ny .= x + 1';
-    const filename = 'TestCivetFile.civet';
-    const result = await compileCivet(civetCode, filename);
+  const civetCode = 'x := 42\ny .= x + 1';
+  const filename = 'TestCivetFile.civet';
 
-    // Log the raw sourcemap for inspection
-    // console.log('Raw Sourcemap Output:', JSON.stringify(result.rawMap.lines, null, 2));
-    console.log('Raw Sourcemap Output:', JSON.stringify(result.rawMap, null, 2));
-    // Check TypeScript code output
+  it('returns a CivetLinesSourceMap by default', () => {
+    const result = compileCivet(civetCode, filename); // Default: outputStandardV3Map is false
+    console.log('Default (CivetLinesSourceMap) Output:', JSON.stringify(result.rawMap, null, 2));
+
     assert.match(result.code, /const x = 42/);
     assert.match(result.code, /let y = x \+ 1/);
 
-    // // Check rawMap shape
-    // const map = result.rawMap;
-    // assert.equal(map.version, 3);
-    // assert.ok(Array.isArray(map.sources));
-    // assert.ok(typeof map.mappings === 'string');
-    // assert.ok(map.sources.includes(filename));
+    const map = result.rawMap as CivetLinesSourceMap | undefined;
+    assert.ok(map, 'rawMap should be defined for CivetLinesSourceMap test');
+    if (map) {
+      assert.ok(!('version' in map) && !('mappings' in map), 'Should be CivetLinesSourceMap, not Standard V3');
+      assert.ok(Array.isArray(map.lines), 'CivetLinesSourceMap should have a lines array');
+      assert.ok(map.lines.length > 0, 'CivetLinesSourceMap.lines should not be empty');
+      assert.strictEqual(map.source, civetCode, 'CivetLinesSourceMap.source should match input code');
+    }
+  });
+
+  it('returns a StandardRawSourceMap when outputStandardV3Map is true', () => {
+    const result = compileCivet(civetCode, filename, { outputStandardV3Map: true });
+    console.log('Standard V3 Output:', JSON.stringify(result.rawMap, null, 2));
+
+    assert.match(result.code, /const x = 42/);
+    assert.match(result.code, /let y = x \+ 1/);
+
+    const map = result.rawMap as StandardRawSourceMap | undefined;
+    assert.ok(map, 'rawMap should be defined for StandardRawSourceMap test');
+    if (map) {
+      assert.ok('version' in map && 'mappings' in map, 'Should be Standard V3 map');
+      assert.equal(map.version, 3, 'StandardRawSourceMap version should be 3');
+      assert.ok(Array.isArray(map.sources), 'StandardRawSourceMap should have sources array');
+      assert.ok(typeof map.mappings === 'string', 'StandardRawSourceMap should have mappings string');
+      assert.ok(map.sources.includes(filename), 'StandardRawSourceMap.sources should include filename');
+    }
   });
 }); 
