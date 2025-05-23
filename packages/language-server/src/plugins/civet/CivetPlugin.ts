@@ -33,6 +33,15 @@ import { CivetCompletionsProvider } from './features/CivetCompletionsProvider';
 import { CivetCodeActionsProvider } from './features/CivetCodeActionsProvider';
 import { CivetDefinitionsProvider } from './features/CivetDefinitionsProvider';
 
+interface CivetPluginCache {
+    version: number;
+    compiledTsCode: string;
+    sourcemapLines: SourceMapLinesEntry[]; // Transformed, 1-based lines, 0-based columns
+    rawSourcemapLines: RawVLQSourcemapLines; // Raw from civet.compile, 0-based lines and columns
+    originalContentLineOffset: number; // Number of leading blank lines stripped from original Civet
+    scriptTagInfo: TagInformation; // Store the script tag info
+}
+
 export function getCivetTagInfo(document: Document): TagInformation | null {
     let civetTagInfo: TagInformation | null = null;
     const scriptInfo = document.scriptInfo;
@@ -89,7 +98,7 @@ export class CivetPlugin implements
     private definitionsProvider: CivetDefinitionsProvider;
     private selectionRangeProvider: SelectionRangeProviderImpl;
 
-    public compiledCivetCache = new Map<string, { version: number, compiledTsCode: string, sourcemapLines: SourceMapLinesEntry[], rawSourcemapLines: RawVLQSourcemapLines, originalContentLineOffset: number }>();
+    private compiledCivetCache = new Map<string, CivetPluginCache>();
     public civetLanguageServiceHost: CivetLanguageServiceHost;
 
     constructor(
@@ -232,11 +241,12 @@ export class CivetPlugin implements
             
             this.civetLanguageServiceHost.updateCivetFile(document.uri, compiledTsCode, finalSourcemapLines);
             this.compiledCivetCache.set(document.uri, { 
-                version: currentVersion, 
+                version: document.version,
                 compiledTsCode, 
-                sourcemapLines: finalSourcemapLines,
-                rawSourcemapLines: rawSourcemapForCache,
-                originalContentLineOffset
+                sourcemapLines: [], // Keep this empty for now, TSHost doesn't use it for mapping directly.
+                rawSourcemapLines: compileResult.sourceMap.lines as RawVLQSourcemapLines, // Store the raw lines
+                originalContentLineOffset,
+                scriptTagInfo: civetTagInfo // Store scriptTagInfo
             });
 
         } catch (e: any) {
@@ -244,5 +254,23 @@ export class CivetPlugin implements
             this.compiledCivetCache.delete(document.uri);
             this.civetLanguageServiceHost.updateCivetFile(document.uri, "", []);
         }
+    }
+
+    // Method to expose compiled data for testing purposes
+    public getCompiledCivetDataForTest(uri: string): { compiledTsCode: string; rawSourcemapLines: any; originalContentLineOffset: number; scriptTagInfo: TagInformation | undefined } | undefined {
+        const cached = this.compiledCivetCache.get(uri);
+        if (cached) {
+            return {
+                compiledTsCode: cached.compiledTsCode,
+                rawSourcemapLines: cached.rawSourcemapLines,
+                originalContentLineOffset: cached.originalContentLineOffset,
+                scriptTagInfo: cached.scriptTagInfo
+            };
+        }
+        return undefined;
+    }
+
+    public getCompiledData(uri: string): CivetPluginCache | undefined {
+        return this.compiledCivetCache.get(uri);
     }
 } 

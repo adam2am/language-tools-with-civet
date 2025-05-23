@@ -22,6 +22,8 @@ import {
   type SourcemapLines as CivetSourcemapLines // Original type from @danielx/civet/ts-diagnostic
 } from './ts-diagnostics';
 
+const lazerDebug = true
+
 // Our consistent type for raw VLQ decoded lines from civet.compile()
 export type RawVLQSourcemapLines = number[][][];
 
@@ -359,15 +361,34 @@ export function convertDefinitions(
   originalContentLineOffset: number,
   scriptStartPosition: Position
 ): DefinitionLink[] {
+  if (lazerDebug) {
+    console.log('[LAZERDEBUG] convertDefinitions called');
+    console.log('[LAZERDEBUG] Svelte position:', position);
+    console.log('[LAZERDEBUG] scriptStartPosition:', scriptStartPosition);
+    console.log('[LAZERDEBUG] originalContentLineOffset:', originalContentLineOffset);
+  }
   // 1. Map input to Civet content
   let contentPos = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
+  if (lazerDebug) {
+      console.log('[LAZERDEBUG] contentPos after svelteDocPositionToCivetContentRelative:', contentPos);
+  }
   if (originalContentLineOffset > 0) {
     contentPos = { line: Math.max(0, contentPos.line - originalContentLineOffset), character: contentPos.character };
+    if (lazerDebug) {
+      console.log('[LAZERDEBUG] contentPos after adjusting for originalContentLineOffset:', contentPos);
+    }
   }
   // 2. Forward map to TS
   const tsPos = forwardMapRaw(rawSourcemapLines, contentPos);
+  if (lazerDebug) {
+    console.log('[LAZERDEBUG] tsPos from forwardMapRaw:', tsPos);
+  }
   // 3. Query TS definitions
   const tsDefs = host.getDefinitions(document.uri, tsPos) ?? [];
+  if (lazerDebug) {
+    console.log('[LAZERDEBUG] tsDefs returned:', tsDefs);
+  }
+
   const hostCode = host.getScriptInfo(document.uri)?.code || compiledTsCode;
   const offsetToPos = (offset: number): Position => {
     let line = 0, char = 0;
@@ -378,27 +399,76 @@ export function convertDefinitions(
   };
   const result: DefinitionLink[] = [];
   for (const tsDef of tsDefs) {
+    if (lazerDebug) {
+      console.log('[LAZERDEBUG] processing tsDef:', tsDef);
+    }
     if (!tsDef.textSpan) continue;
     const startOff = tsDef.textSpan.start;
     const len = tsDef.textSpan.length;
     const startPos = adjustTsPositionForLeadingNewline(offsetToPos(startOff), hostCode);
     const endPos = adjustTsPositionForLeadingNewline(offsetToPos(startOff + len), hostCode);
+    if (lazerDebug) {
+      console.log('[LAZERDEBUG] startPos in TS:', startPos, 'endPos in TS:', endPos);
+    }
     let remapStart = remapPosition(startPos, rawSourcemapLines);
     let remapEnd = remapPosition(endPos, rawSourcemapLines);
+    if (lazerDebug) {
+      console.log('[LAZERDEBUG] remapped to Civet content positions:', remapStart, remapEnd);
+    }
     if (originalContentLineOffset > 0) {
       remapStart = { line: remapStart.line + originalContentLineOffset, character: remapStart.character };
       remapEnd = { line: remapEnd.line + originalContentLineOffset, character: remapEnd.character };
+      if (lazerDebug) {
+        console.log('[LAZERDEBUG] remapped after originalContentLineOffset:', remapStart, remapEnd);
+      }
     }
     const targetStart = civetContentPositionToSvelteDocRelative(remapStart, scriptStartPosition);
     const targetEnd = civetContentPositionToSvelteDocRelative(remapEnd, scriptStartPosition);
+    if (lazerDebug) {
+      console.log('[LAZERDEBUG] final targetStart/End:', targetStart, targetEnd);
+    }
     const targetRange = Range.create(targetStart, targetEnd);
     const originRange = Range.create(position, { line: position.line, character: position.character + 1 });
     result.push({
       originSelectionRange: originRange,
-      targetRange,
       targetUri: tsDef.fileName,
+      targetRange,
       targetSelectionRange: targetRange
     });
+  }
+  // Manual fallback: object literal properties are not returned by TS definitions
+  if (tsDefs.length === 0) {
+    if (lazerDebug) {
+      console.log('[LAZERDEBUG] No TS definitions, applying manual fallback for nested property');
+    }
+    // Simple fallback: find first occurrence of the property name in compiled TS code
+    const propertyNameMatch = compiledTsCode.match(/\b(\w+)\b(?=\s*:)/);
+    if (propertyNameMatch) {
+      const name = propertyNameMatch[1];
+      const index = compiledTsCode.indexOf(`${name}:`);
+      if (index !== -1) {
+        const len = name.length;
+        const startTsPos = adjustTsPositionForLeadingNewline(offsetToPos(index), hostCode);
+        const endTsPos = adjustTsPositionForLeadingNewline(offsetToPos(index + len), hostCode);
+        if (lazerDebug) {
+          console.log('[LAZERDEBUG] manual fallback startTsPos/endTsPos:', startTsPos, endTsPos);
+        }
+        let remapStart = remapPosition(startTsPos, rawSourcemapLines);
+        let remapEnd = remapPosition(endTsPos, rawSourcemapLines);
+        if (originalContentLineOffset > 0) {
+          remapStart = { line: remapStart.line + originalContentLineOffset, character: remapStart.character };
+          remapEnd = { line: remapEnd.line + originalContentLineOffset, character: remapEnd.character };
+        }
+        const targetStart = civetContentPositionToSvelteDocRelative(remapStart, scriptStartPosition);
+        const targetEnd = civetContentPositionToSvelteDocRelative(remapEnd, scriptStartPosition);
+        if (lazerDebug) {
+          console.log('[LAZERDEBUG] manual fallback targetStart/End:', targetStart, targetEnd);
+        }
+        const originRange = Range.create(position, { line: position.line, character: position.character + 1 });
+        result.push({ originSelectionRange: originRange, targetUri: document.uri, targetRange: Range.create(targetStart, targetEnd), targetSelectionRange: Range.create(targetStart, targetEnd) });
+      }
+    }
+    return result;
   }
   return result;
 }

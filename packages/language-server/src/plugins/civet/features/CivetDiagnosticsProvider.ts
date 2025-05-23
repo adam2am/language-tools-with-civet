@@ -14,7 +14,7 @@ export class CivetDiagnosticsProvider implements DiagnosticsProvider {
     ) {}
 
     async getDiagnostics(document: Document): Promise<Diagnostic[]> {
-        const cached = this.plugin.compiledCivetCache.get(document.uri);
+        const cached = this.plugin.getCompiledData(document.uri);
         const host = this.plugin.civetLanguageServiceHost;
         const civetTagInfo = getCivetTagInfo(document);
         if (!cached?.compiledTsCode || !cached.rawSourcemapLines || !host || !civetTagInfo?.startPos) {

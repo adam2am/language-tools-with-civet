@@ -12,7 +12,7 @@ export class CivetHoverProvider implements HoverProvider {
     ) {}
 
     async doHover(document: Document, position: Position): Promise<Hover | null> {
-        const cached = this.plugin.compiledCivetCache.get(document.uri);
+        const cached = this.plugin.getCompiledData(document.uri);
         const civetTagInfo = getCivetTagInfo(document);
         return cached && civetTagInfo && civetTagInfo.startPos
             ? convertHover(

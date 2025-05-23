@@ -12,7 +12,7 @@ export class CivetDefinitionsProvider implements DefinitionsProvider {
     ) {}
 
     async getDefinitions(document: Document, position: Position): Promise<DefinitionLink[]> {
-        const cached = this.plugin.compiledCivetCache.get(document.uri);
+        const cached = this.plugin.getCompiledData(document.uri);
         const host = this.plugin.civetLanguageServiceHost;
         const civetTagInfo = getCivetTagInfo(document);
         if (!cached?.compiledTsCode || !cached.rawSourcemapLines || !host || !civetTagInfo?.startPos) {

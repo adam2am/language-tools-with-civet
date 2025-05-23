@@ -19,7 +19,7 @@ export class CivetCompletionsProvider implements CompletionsProvider {
         completionContext?: CompletionContext
     ): Promise<CompletionList | null> {
         // Delegate full mapping to util
-        const cached = this.plugin.compiledCivetCache.get(document.uri);
+        const cached = this.plugin.getCompiledData(document.uri);
         const civetTagInfo = getCivetTagInfo(document);
         return cached && cached.compiledTsCode && cached.rawSourcemapLines && civetTagInfo && civetTagInfo.startPos
             ? convertCompletions(

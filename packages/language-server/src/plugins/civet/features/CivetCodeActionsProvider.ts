@@ -41,7 +41,7 @@ export class CivetCodeActionsProvider implements CodeActionsProvider {
         range: Range,
         context: CodeActionContext
     ): Promise<CodeAction[]> {
-        const cached = this.plugin.compiledCivetCache.get(document.uri);
+        const cached = this.plugin.getCompiledData(document.uri);
         if (!cached || !cached.compiledTsCode) {
             return [];
         }
@@ -157,7 +157,7 @@ export class CivetCodeActionsProvider implements CodeActionsProvider {
             // This is a complex step similar to mapWorkspaceEditToCivet and needs careful handling.
             if (result && typeof result !== 'string' && (result as WorkspaceEdit).changes) {
                 console.warn("[CivetCodeActionsProvider] executeCommand returned a WorkspaceEdit. Mapping edits back to Civet coordinates.");
-                 const cached = this.plugin.compiledCivetCache.get(document.uri);
+                 const cached = this.plugin.getCompiledData(document.uri);
                  const civetTagInfo = getCivetTagInfo(document);
                  if(cached && civetTagInfo && civetTagInfo.startPos && cached.rawSourcemapLines) {
                     const hostTsCode = this.plugin.civetLanguageServiceHost.getScriptInfo(document.uri)?.code || cached.compiledTsCode;
@@ -182,7 +182,7 @@ export class CivetCodeActionsProvider implements CodeActionsProvider {
             const resolvedAction = await this.tsProvider.resolveCodeAction(document, codeAction /*, cancellationToken */);
             // If the resolved action has edits, they need to be mapped.
             if (resolvedAction.edit) {
-                const cached = this.plugin.compiledCivetCache.get(document.uri);
+                const cached = this.plugin.getCompiledData(document.uri);
                 const civetTagInfo = getCivetTagInfo(document);
                 if (cached && civetTagInfo && civetTagInfo.startPos && cached.rawSourcemapLines) {
                     const hostTsCode = this.plugin.civetLanguageServiceHost.getScriptInfo(document.uri)?.code || cached.compiledTsCode;
