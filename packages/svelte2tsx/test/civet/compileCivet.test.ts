@@ -4,7 +4,7 @@ import type { CivetLinesSourceMap, StandardRawSourceMap, CivetOutputMap } from '
 
 describe('compileCivet', () => {
   const civetCode = '\n  a := 1\n  if a > 0 \n    x := 42\n  else\n    y .= x + 1\n  '; // Stresstest code
-  const filename = 'TestCivetFile.civet';
+    const filename = 'TestCivetFile.civet';
 
   it('returns a CivetLinesSourceMap by default', () => {
     const result = compileCivet(civetCode, filename); // Default: outputStandardV3Map is false

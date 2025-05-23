@@ -24,6 +24,19 @@ export function normalizeCivetMap(
   // This ensures the output map refers to the full original Svelte content.
   generator.setSourceContent(svelteFilePath, originalFullSvelteContent);
 
+  // Determine the indentation of the Civet snippet within the Svelte <script> tag
+  let svelteScriptTagIndent = 0;
+  if (originalFullSvelteContent && originalCivetSnippetLineOffset_0based >= 0) {
+    const svelteLines = originalFullSvelteContent.split('\n');
+    if (originalCivetSnippetLineOffset_0based < svelteLines.length) {
+      const snippetLineInSvelte = svelteLines[originalCivetSnippetLineOffset_0based];
+      const match = snippetLineInSvelte.match(/^\s*/);
+      if (match) {
+        svelteScriptTagIndent = match[0].length;
+      }
+    }
+  }
+
   // The `civetMap.lines` array contains segments which are:
   // [generatedColumn_0based, sourceFileIndex_0based (relative to civetMap.sources if it existed), 
   //  originalLine_0based_in_snippet, originalColumn_0based_in_snippet, 
@@ -33,12 +46,33 @@ export function normalizeCivetMap(
 
   if (civetMap.lines) {
     civetMap.lines.forEach((lineSegments, generatedLine_0based) => {
-      if (!lineSegments) return;
+      if (!lineSegments || lineSegments.length === 0) return;
 
-      lineSegments.forEach(segment => {
+      // Sort segments: primarily by generated column, then by original line, then by original column.
+      // This ensures that for a given generated position, the segment mapping to the earliest
+      // original position comes first.
+      const sortedSegments = lineSegments.slice().sort((a, b) => {
+        if (a[0] !== b[0]) return a[0] - b[0]; // Generated column
+        // If generated columns are the same, sort by original line then original column, both ASCENDING.
+        // This makes the segment mapping to the EARLIEST original position come first.
+        if (a[2] !== b[2]) return a[2] - b[2]; // Original line (ascending)
+        return a[3] - b[3];                   // Original column (ascending)
+      });
+
+      let lastAddedGeneratedColumn = -1;
+      sortedSegments.forEach(segment => {
         if (!segment || segment.length < 4) return; // Ensure segment is valid
 
         const generatedColumn_0based = segment[0];
+
+        // If this segment refers to the same generated character position as the last one 
+        // we processed (for this generated line), and we have already added a mapping for it, 
+        // skip this one. Due to the sort order, the first one encountered is the one mapping
+        // to the earliest original position, which is what we want.
+        if (generatedColumn_0based === lastAddedGeneratedColumn) {
+          return;
+        }
+
         // segment[1] is sourceFileIndex, typically 0 for single-file snippet compilation
         const originalLine_0based_in_snippet = segment[2];
         const originalColumn_0based_in_snippet = segment[3];
@@ -50,12 +84,15 @@ export function normalizeCivetMap(
 
         // Adjust original line to be relative to the start of the original .svelte file.
         const finalOriginalLine_1based_in_svelte = originalLine_0based_in_snippet + originalCivetSnippetLineOffset_0based + 1;
+        
+        // Adjust original column to account for indentation within the Svelte script tag.
+        const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet + svelteScriptTagIndent;
 
         generator.addMapping({
           source: svelteFilePath, // All original positions are from the .svelte file
           original: {
             line: finalOriginalLine_1based_in_svelte,
-            column: originalColumn_0based_in_snippet 
+            column: finalOriginalColumn_0based_in_svelte 
           },
           generated: {
             line: generatedLine_0based + 1, // SourceMapGenerator expects 1-based generated line
@@ -63,6 +100,7 @@ export function normalizeCivetMap(
           },
           name: name
         });
+        lastAddedGeneratedColumn = generatedColumn_0based; // Record that we've added a mapping for this column.
       });
     });
   }
