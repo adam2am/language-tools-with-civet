@@ -21,6 +21,7 @@ import {
   flattenDiagnosticMessageText,
   type SourcemapLines as CivetSourcemapLines // Original type from @danielx/civet/ts-diagnostic
 } from './ts-diagnostics';
+import { getCivetTagInfo } from './CivetPlugin';
 
 const lazerDebug = true
 
@@ -368,18 +369,24 @@ export function convertDefinitions(
     console.log('[LAZERDEBUG] originalContentLineOffset:', originalContentLineOffset);
   }
   // 1. Map input to Civet content
-  let contentPos = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
+  let contentPosForSourcemap = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
   if (lazerDebug) {
-      console.log('[LAZERDEBUG] contentPos after svelteDocPositionToCivetContentRelative:', contentPos);
+      console.log('[LAZERDEBUG] contentPosForSourcemap (before originalContentLineOffset adjustment):', contentPosForSourcemap);
   }
+  // Create a separate variable for accessing script content, NOT adjusted by originalContentLineOffset
+  const contentPosForScriptAccess = { line: contentPosForSourcemap.line, character: contentPosForSourcemap.character };
+  if (lazerDebug) {
+    console.log('[LAZERDEBUG] contentPosForScriptAccess (for script string access):', contentPosForScriptAccess);
+  }
+
   if (originalContentLineOffset > 0) {
-    contentPos = { line: Math.max(0, contentPos.line - originalContentLineOffset), character: contentPos.character };
+    contentPosForSourcemap = { line: Math.max(0, contentPosForSourcemap.line - originalContentLineOffset), character: contentPosForSourcemap.character };
     if (lazerDebug) {
-      console.log('[LAZERDEBUG] contentPos after adjusting for originalContentLineOffset:', contentPos);
+      console.log('[LAZERDEBUG] contentPosForSourcemap (after originalContentLineOffset, for sourcemap):', contentPosForSourcemap);
     }
   }
-  // 2. Forward map to TS
-  const tsPos = forwardMapRaw(rawSourcemapLines, contentPos);
+  // 2. Forward map to TS using the sourcemap-adjusted position
+  const tsPos = forwardMapRaw(rawSourcemapLines, contentPosForSourcemap);
   if (lazerDebug) {
     console.log('[LAZERDEBUG] tsPos from forwardMapRaw:', tsPos);
   }
@@ -398,11 +405,38 @@ export function convertDefinitions(
     return { line, character: char };
   };
   const result: DefinitionLink[] = [];
+  let tsReturnedCorrectDefinition = false;
   for (const tsDef of tsDefs) {
     if (lazerDebug) {
       console.log('[LAZERDEBUG] processing tsDef:', tsDef);
     }
     if (!tsDef.textSpan) continue;
+
+    // Try to get the property name from the original script content at the cursor
+    // This is to compare with tsDef.name later
+    let identifierAtCursor = '';
+    const tempTagInfo = getCivetTagInfo(document);
+    const tempScriptContent = tempTagInfo?.content || '';
+    if (tempScriptContent) {
+        const tempScriptLines = tempScriptContent.split('\n');
+        const lineForCursorCheck = tempScriptLines[contentPosForScriptAccess.line];
+        if (lineForCursorCheck) {
+            const textAfterCursorInLine = lineForCursorCheck.substring(contentPosForScriptAccess.character);
+            const match = textAfterCursorInLine.match(/^(\w+)/);
+            if (match) {
+                identifierAtCursor = match[1];
+            }
+        }
+    }
+    if (lazerDebug) {
+        console.log('[LAZERDEBUG] Identifier at cursor (for comparison with tsDef.name):', identifierAtCursor);
+        console.log('[LAZERDEBUG] tsDef.name:', tsDef.name);
+    }
+
+    if (identifierAtCursor && tsDef.name === identifierAtCursor) {
+        tsReturnedCorrectDefinition = true;
+    }
+
     const startOff = tsDef.textSpan.start;
     const len = tsDef.textSpan.length;
     const startPos = adjustTsPositionForLeadingNewline(offsetToPos(startOff), hostCode);
@@ -436,23 +470,60 @@ export function convertDefinitions(
       targetSelectionRange: targetRange
     });
   }
-  // Manual fallback: object literal properties are not returned by TS definitions
-  if (tsDefs.length === 0) {
+  // Manual fallback: if TS definitions are empty OR TS didn't return a definition for the specific identifier at the cursor
+  if (tsDefs.length === 0 || !tsReturnedCorrectDefinition) {
     if (lazerDebug) {
-      console.log('[LAZERDEBUG] No TS definitions, applying manual fallback for nested property');
-    }
-    // Simple fallback: find first occurrence of the property name in compiled TS code
-    const propertyNameMatch = compiledTsCode.match(/\b(\w+)\b(?=\s*:)/);
-    if (propertyNameMatch) {
-      const name = propertyNameMatch[1];
-      const index = compiledTsCode.indexOf(`${name}:`);
-      if (index !== -1) {
-        const len = name.length;
-        const startTsPos = adjustTsPositionForLeadingNewline(offsetToPos(index), hostCode);
-        const endTsPos = adjustTsPositionForLeadingNewline(offsetToPos(index + len), hostCode);
-        if (lazerDebug) {
-          console.log('[LAZERDEBUG] manual fallback startTsPos/endTsPos:', startTsPos, endTsPos);
+        if (tsDefs.length === 0) {
+            console.log('[LAZERDEBUG] No TS definitions, applying manual fallback.');
+        } else if (!tsReturnedCorrectDefinition) {
+            console.log('[LAZERDEBUG] TS definitions found, but not for the identifier at cursor. Applying manual fallback.');
         }
+    }
+    
+    let determinedPropertyName = '';
+    // Use Civet script content and contentPosForScriptAccess to identify the property name under the cursor
+    const tagInfo = getCivetTagInfo(document);
+    const scriptContent = tagInfo?.content || '';
+    if (lazerDebug) {
+      console.log('[LAZERDEBUG] full scriptContent from tagInfo before split (length):', scriptContent.length, 'snippet:', scriptContent.substr(0,300).replace(/\n/g,'\\n'));
+      console.log('[LAZERDEBUG] scriptTagInfo.content (snippet):', scriptContent.substr(0,200).replace(/\n/g,'\\n'), '...');
+      const scriptLines = scriptContent.split('\n');
+      console.log('[LAZERDEBUG] scriptLines count:', scriptLines.length);
+      console.log('[LAZERDEBUG] contentPosForScriptAccess (Civet script coords):', contentPosForScriptAccess);
+      console.log('[LAZERDEBUG] scriptLines[contentPosForScriptAccess.line]:', scriptLines[contentPosForScriptAccess.line]);
+      const scriptLineText = scriptLines[contentPosForScriptAccess.line] || '';
+      console.log('[LAZERDEBUG] scriptLineText:', scriptLineText);
+      const textAfterCursor = scriptLineText.substring(contentPosForScriptAccess.character);
+      console.log('[LAZERDEBUG] textAfterCursor in script:', textAfterCursor);
+      const usageMatch = textAfterCursor.match(/^(\w+)/);
+      if (usageMatch) {
+        determinedPropertyName = usageMatch[1];
+        console.log('[LAZERDEBUG] Fallback: property name from script usage:', determinedPropertyName);
+      }
+    }
+    // If still undetermined, fall back to the first property definition in compiled TS
+    if (!determinedPropertyName) {
+      const firstPropDefMatch = compiledTsCode.match(/\b(\w+)\b(?=\s*:)/);
+      if (firstPropDefMatch) {
+        determinedPropertyName = firstPropDefMatch[1];
+        if (lazerDebug) console.log('[LAZERDEBUG] Fallback: property name from TS definition:', determinedPropertyName);
+      }
+    }
+
+    if (determinedPropertyName) {
+      // Search for the definition in the compiled TS: `propertyName:`
+      const searchRegex = new RegExp(`\\b${determinedPropertyName}\\b(?=\\s*:)`);
+      if (lazerDebug) console.log('[LAZERDEBUG] searchRegex:', searchRegex);
+      const idx = compiledTsCode.search(searchRegex);
+      if (lazerDebug) console.log('[LAZERDEBUG] matched at idx:', idx);
+      if (lazerDebug && idx !== -1) {
+        console.log('[LAZERDEBUG] compiledTsCode around match:', compiledTsCode.substr(Math.max(0, idx-20), determinedPropertyName.length+40).replace(/\n/g,'\\n'));
+      }
+      if (idx !== -1) {
+        const len = determinedPropertyName.length;
+        const startTsPos = adjustTsPositionForLeadingNewline(offsetToPos(idx), hostCode);
+        const endTsPos = adjustTsPositionForLeadingNewline(offsetToPos(idx + len), hostCode);
+        if (lazerDebug) console.log('[LAZERDEBUG] fallback startTsPos/endTsPos:', startTsPos, endTsPos);
         let remapStart = remapPosition(startTsPos, rawSourcemapLines);
         let remapEnd = remapPosition(endTsPos, rawSourcemapLines);
         if (originalContentLineOffset > 0) {
@@ -461,14 +532,12 @@ export function convertDefinitions(
         }
         const targetStart = civetContentPositionToSvelteDocRelative(remapStart, scriptStartPosition);
         const targetEnd = civetContentPositionToSvelteDocRelative(remapEnd, scriptStartPosition);
-        if (lazerDebug) {
-          console.log('[LAZERDEBUG] manual fallback targetStart/End:', targetStart, targetEnd);
-        }
+        if (lazerDebug) console.log('[LAZERDEBUG] fallback targetStart/End:', targetStart, targetEnd);
         const originRange = Range.create(position, { line: position.line, character: position.character + 1 });
         result.push({ originSelectionRange: originRange, targetUri: document.uri, targetRange: Range.create(targetStart, targetEnd), targetSelectionRange: Range.create(targetStart, targetEnd) });
       }
+      return result;
     }
-    return result;
   }
   return result;
 }

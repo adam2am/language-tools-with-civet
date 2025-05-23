@@ -103,8 +103,8 @@ const finalValue = complexObject.nested.anotherNum
 
         // ---- START DEBUG LOGS ----
         // console.log('[DEBUG TEST]', 'complexCivetSourceCode (first 60 chars):', complexCivetSourceCode.substring(0,60).replace(/\n/g, "\\n"));
-        // const scriptTagStartOffset = complexCivetSourceCode.indexOf('<script lang="civet">');
-        // console.log('[DEBUG TEST]', 'complexCivetSourceCode.indexOf("<script lang=\"civet\">"):', scriptTagStartOffset);
+        // const scriptStartOffset = complexCivetSourceCode.indexOf('<script lang="civet">');
+        // console.log('[DEBUG TEST]', 'complexCivetSourceCode.indexOf("<script lang=\"civet\">"):', scriptStartOffset);
         // if (document.scriptInfo) {
         //     console.log('[DEBUG TEST]', 'document.scriptInfo.content (first 50 chars):', document.scriptInfo.content.substring(0,50).replace(/\n/g, "\\n"));
         //     console.log('[DEBUG TEST]', 'document.scriptInfo.start (offset):', document.scriptInfo.start);
@@ -122,7 +122,7 @@ const finalValue = complexObject.nested.anotherNum
         // console.log('[DEBUG TEST]', 'Test case uses pos(2,0) for Svelte line 2, which is 0-indexed line 2 of the entire complexCivetSourceCode string');
         // ---- END DEBUG LOGS ----
     });
-/*
+
     it('doHover - should provide hover info for a variable in Civet code', async () => {
         // <script lang="civet">
         // randomInt := (min: number, max: number): number =>  <- Svelte line 2, char 0
@@ -221,8 +221,8 @@ const finalValue = complexObject.nested.anotherNum
     });
     
     it('getDefinitions - for object property `anotherNum` accessed via `complexObject.nested.anotherNum` in `finalValue`', async () => {
-        // finalValue := complexObject.nested.anoth*e*rNum  <- Svelte line 23, target `anotherNum` (char 32 is 'a')
-        const documentPosition = pos(23, 32);
+        // finalValue := complexObject.nested.anoth*e*rNum  <- Svelte line 24, target `anotherNum` (char 35 is 'a')
+        const documentPosition = pos(24, 35);
 
         const definitions = await plugin.getDefinitions(document, documentPosition);
         assert.ok(definitions, 'Definitions should be returned');
@@ -310,5 +310,4 @@ const finalValue = complexObject.nested.anotherNum
             assert.strictEqual(hoverInfo, null, "Expected null hover or hover for the variable for a string literal");
         }
     });
-*/
 }); 
