@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import assert from 'assert';
-import { svelte2tsx } from '../index.mjs';
+import { svelte2tsx } from '../../index.mjs';
 import { TraceMap, originalPositionFor, LEAST_UPPER_BOUND } from '@jridgewell/trace-mapping';
 
 const svelteFilePath = 'test-direct-injection.svelte';

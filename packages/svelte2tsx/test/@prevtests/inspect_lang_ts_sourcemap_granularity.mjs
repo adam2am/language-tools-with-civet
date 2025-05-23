@@ -1,4 +1,4 @@
-import { svelte2tsx } from '../index.mjs';
+import { svelte2tsx } from '../../index.mjs';
 import { decode } from '@jridgewell/sourcemap-codec';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 

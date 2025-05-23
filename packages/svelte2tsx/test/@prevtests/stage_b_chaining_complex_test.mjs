@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { svelte2tsx } from '../index.mjs'; // Assuming .js extension after build
+import { svelte2tsx } from '../../index.mjs'; // Assuming .js extension after build
 import { TraceMap, originalPositionFor, GREATEST_LOWER_BOUND, LEAST_UPPER_BOUND } from '@jridgewell/trace-mapping';
 import { fileURLToPath } from 'url';
 import util from 'util'; // For redirecting console
