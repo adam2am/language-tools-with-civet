@@ -1,19 +1,28 @@
 import { Document } from '../../../lib/documents';
-import { HoverProvider } from '../../interfaces';
-import { Hover, Position, Range, MarkupKind } from 'vscode-languageserver';
+import { Position, Hover, MarkupKind } from 'vscode-languageserver';
 import { LSAndTSDocResolver } from '../../typescript/LSAndTSDocResolver';
-import { CivetPlugin, MappingPosition, getCivetTagInfo, svelteDocPositionToCivetContentRelative, adjustTsPositionForLeadingNewline, civetContentPositionToSvelteDocRelative } from '../CivetPlugin';
-import { remapPosition as civetRemapPosition, forwardMap as civetForwardMap } from '../civetUtils';
+import { CivetPlugin, getCivetTagInfo } from '../CivetPlugin';
+import {
+    remapPosition,
+    forwardMapRaw,
+    svelteDocPositionToCivetContentRelative,
+    adjustTsPositionForLeadingNewline,
+    civetContentPositionToSvelteDocRelative,
+    type RawVLQSourcemapLines,
+    type MappingPosition
+} from '../util';
+import { HoverProvider } from '../../interfaces';
+import * as ts from 'typescript';
 
-export class CivetHoverProvider implements HoverProvider { 
+export class CivetHoverProvider implements HoverProvider {
     constructor(
-        private readonly lsAndTSDocResolver: LSAndTSDocResolver, 
+        private readonly resolver: LSAndTSDocResolver,
         private readonly plugin: CivetPlugin
     ) {}
 
     async doHover(document: Document, position: Position): Promise<Hover | null> {
         const cached = this.plugin.compiledCivetCache.get(document.uri);
-        if (!cached || !cached.compiledTsCode) {
+        if (!cached || !cached.compiledTsCode || !cached.rawSourcemapLines) {
             return null;
         }
 
@@ -23,8 +32,12 @@ export class CivetHoverProvider implements HoverProvider {
         }
         const scriptStartPosition = civetTagInfo.startPos;
 
-        let civetContentPosition = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
-        const { originalContentLineOffset, rawSourcemapLines, compiledTsCode } = cached;
+        let civetContentPosition = svelteDocPositionToCivetContentRelative(
+            position,
+            scriptStartPosition
+        );
+
+        const { compiledTsCode, originalContentLineOffset, rawSourcemapLines } = cached;
 
         if (originalContentLineOffset > 0) {
             civetContentPosition = {
@@ -33,39 +46,33 @@ export class CivetHoverProvider implements HoverProvider {
             };
         }
 
-        if (!rawSourcemapLines) return null;
-
-        const tsPosition = civetForwardMap(rawSourcemapLines, civetContentPosition);
+        const tsPosition = forwardMapRaw(rawSourcemapLines, civetContentPosition);
 
         if (!this.plugin.civetLanguageServiceHost) {
             return null;
         }
 
-        const quickInfo = this.plugin.civetLanguageServiceHost.getQuickInfo(document.uri, tsPosition);
-        if (!quickInfo) {
+        const quickInfo = this.plugin.civetLanguageServiceHost.getQuickInfo(
+            document.uri,
+            tsPosition
+        );
+
+        if (!quickInfo || !quickInfo.displayParts) {
             return null;
         }
 
-        const contents = quickInfo.displayParts ? quickInfo.displayParts.map(dp => dp.text).join('') : '';
-        let documentation = '';
-        if (quickInfo.documentation) {
-            documentation = quickInfo.documentation.map(doc => doc.text).join('\n');
+        const displayString = ts.displayPartsToString(quickInfo.displayParts);
+        let documentation = ts.displayPartsToString(quickInfo.documentation);
+        if (quickInfo.tags) {
+            documentation += '\n\n' + quickInfo.tags.map((tag) => `*@${tag.name}* ${tag.text?.map(part => part.text).join('')}`).join('\n');
         }
-        
-        const hoverContents = {
-            kind: MarkupKind.Markdown,
-            value: [contents, documentation].filter(s => s.length > 0).join('\n\n---\n\n')
-        };
 
-        let remappedRange: Range | undefined = undefined;
         const hostTsCode = this.plugin.civetLanguageServiceHost.getScriptInfo(document.uri)?.code || compiledTsCode;
-
-        const offsetToPosition = (offset: number): Position => {
+        const offsetToPositionInTs = (offset: number): Position => {
             let line = 0;
             let character = 0;
-            const currentHostTsCode = hostTsCode || "";
-            for (let i = 0; i < offset && i < currentHostTsCode.length; i++) {
-                if (currentHostTsCode[i] === '\n') {
+            for (let i = 0; i < offset && i < hostTsCode.length; i++) {
+                if (hostTsCode[i] === '\n') {
                     line++;
                     character = 0;
                 } else {
@@ -74,29 +81,42 @@ export class CivetHoverProvider implements HoverProvider {
             }
             return { line, character };
         };
+        
+        const tsStartPosUnadjusted = offsetToPositionInTs(quickInfo.textSpan.start);
+        const tsEndPosUnadjusted = offsetToPositionInTs(quickInfo.textSpan.start + quickInfo.textSpan.length);
 
-        if (hostTsCode && quickInfo.textSpan) {
-            const tsStartPosUnadjusted = offsetToPosition(quickInfo.textSpan.start);
-            const tsStartPos = adjustTsPositionForLeadingNewline(tsStartPosUnadjusted, hostTsCode);
-            
-            let remappedContentStart = civetRemapPosition(tsStartPos, rawSourcemapLines);
-            if (originalContentLineOffset > 0) {
-                remappedContentStart = { line: remappedContentStart.line + originalContentLineOffset, character: remappedContentStart.character };
-            }
+        const tsStartPos = adjustTsPositionForLeadingNewline(tsStartPosUnadjusted, hostTsCode);
+        const tsEndPos = adjustTsPositionForLeadingNewline(tsEndPosUnadjusted, hostTsCode);
 
-            const tsEndPosUnadjusted = offsetToPosition(quickInfo.textSpan.start + quickInfo.textSpan.length);
-            const tsEndPos = adjustTsPositionForLeadingNewline(tsEndPosUnadjusted, hostTsCode);
-            let remappedContentEnd = civetRemapPosition(tsEndPos, rawSourcemapLines);
-            if (originalContentLineOffset > 0) {
-                remappedContentEnd = { line: remappedContentEnd.line + originalContentLineOffset, character: remappedContentEnd.character };
-            }
-            
-            const svelteDocStart = civetContentPositionToSvelteDocRelative(remappedContentStart, scriptStartPosition);
-            const svelteDocEnd = civetContentPositionToSvelteDocRelative(remappedContentEnd, scriptStartPosition);
-            
-            remappedRange = Range.create(svelteDocStart, svelteDocEnd);
-        }
-            
-        return { contents: hoverContents, range: remappedRange };
+        const remappedCivetStart = remapPosition(tsStartPos, rawSourcemapLines);
+        const remappedCivetEnd = remapPosition(tsEndPos, rawSourcemapLines);
+
+        let effectiveCivetScriptStartPos = scriptStartPosition;
+        if (originalContentLineOffset > 0) {
+            effectiveCivetScriptStartPos = { 
+               line: scriptStartPosition.line + originalContentLineOffset, 
+               character: (remappedCivetStart.line === 0 && scriptStartPosition.line + originalContentLineOffset === scriptStartPosition.line) ? scriptStartPosition.character : 0
+           }; 
+       }
+
+        const hoverRange = {
+            start: civetContentPositionToSvelteDocRelative(remappedCivetStart, effectiveCivetScriptStartPos),
+            end: civetContentPositionToSvelteDocRelative(remappedCivetEnd, effectiveCivetScriptStartPos),
+        };
+
+        const contents: Hover['contents'] = {
+            kind: MarkupKind.Markdown,
+            value: [
+                '```typescript',
+                displayString,
+                '```',
+                documentation
+            ].join('\n')
+        };
+
+        return {
+            contents,
+            range: hoverRange
+        };
     }
 } 

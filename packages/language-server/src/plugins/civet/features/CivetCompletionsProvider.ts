@@ -2,8 +2,15 @@ import { Document } from '../../../lib/documents';
 import { CompletionList, Position, Range, CompletionItem, CompletionItemKind, TextEdit, CompletionContext } from 'vscode-languageserver';
 import { LSAndTSDocResolver } from '../../typescript/LSAndTSDocResolver';
 import { LSConfigManager } from '../../../ls-config';
-import { CivetPlugin, MappingPosition, getCivetTagInfo, svelteDocPositionToCivetContentRelative, adjustTsPositionForLeadingNewline, civetContentPositionToSvelteDocRelative } from '../CivetPlugin';
-import { remapPosition as civetRemapPosition, forwardMap as civetForwardMap } from '../civetUtils';
+import { CivetPlugin, getCivetTagInfo } from '../CivetPlugin';
+import 
+{ forwardMapRaw, 
+    remapPosition, 
+    svelteDocPositionToCivetContentRelative, 
+    civetContentPositionToSvelteDocRelative, 
+    adjustTsPositionForLeadingNewline, 
+    type RawVLQSourcemapLines, 
+    type MappingPosition } from '../util';
 import { scriptElementKindToCompletionItemKind } from '../../typescript/utils';
 import * as ts from 'typescript';
 import { CompletionsProvider } from '../../interfaces';
@@ -53,7 +60,7 @@ export class CivetCompletionsProvider implements CompletionsProvider {
             };
         }
         
-        const tsPosition = civetForwardMap(rawSourcemapLines, civetContentPosition);
+        const tsPosition = forwardMapRaw(rawSourcemapLines, civetContentPosition);
 
         if (!this.plugin.civetLanguageServiceHost) {
             console.warn("[CivetCompletionsProvider] civetLanguageServiceHost is not available.");
@@ -100,8 +107,8 @@ export class CivetCompletionsProvider implements CompletionsProvider {
                 const tsStartPos = adjustTsPositionForLeadingNewline(tsStartPosUnadjusted, hostTsCode);
                 const tsEndPos = adjustTsPositionForLeadingNewline(tsEndPosUnadjusted, hostTsCode);
 
-                let remappedContentStart = civetRemapPosition(tsStartPos, rawSourcemapLines);
-                let remappedContentEnd = civetRemapPosition(tsEndPos, rawSourcemapLines);
+                let remappedContentStart = remapPosition(tsStartPos, rawSourcemapLines);
+                let remappedContentEnd = remapPosition(tsEndPos, rawSourcemapLines);
                 
                 let effectiveCivetScriptStartPos = scriptStartPosition;
                 if (originalContentLineOffset > 0) {

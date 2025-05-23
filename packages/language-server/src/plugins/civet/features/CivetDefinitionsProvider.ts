@@ -2,8 +2,8 @@ import { Document, TagInformation } from '../../../lib/documents';
 import { DefinitionsProvider } from '../../interfaces';
 import { LSAndTSDocResolver } from '../../typescript/LSAndTSDocResolver';
 import { DefinitionLink, Position, Range } from 'vscode-languageserver';
-import { CivetPlugin, MappingPosition, getCivetTagInfo, svelteDocPositionToCivetContentRelative, adjustTsPositionForLeadingNewline, civetContentPositionToSvelteDocRelative } from '../CivetPlugin'; // Reference to the main plugin
-import { remapPosition as civetRemapPosition, forwardMap as civetForwardMap } from '../civetUtils';
+import { CivetPlugin, getCivetTagInfo } from '../CivetPlugin'; // Removed MappingPosition from here
+import { remapPosition, forwardMapRaw, svelteDocPositionToCivetContentRelative, adjustTsPositionForLeadingNewline, civetContentPositionToSvelteDocRelative, type RawVLQSourcemapLines, type MappingPosition } from '../util';
 
 export class CivetDefinitionsProvider implements DefinitionsProvider {
     constructor(
@@ -46,7 +46,7 @@ export class CivetDefinitionsProvider implements DefinitionsProvider {
         }
         console.log(`[CivetDefinitionsProvider] rawSourcemapLines length: ${rawSourcemapLines.length}`);
         
-        const tsPosition = civetForwardMap(rawSourcemapLines, civetContentPosition);
+        const tsPosition = forwardMapRaw(rawSourcemapLines, civetContentPosition);
         console.log(`[CivetDefinitionsProvider] mapped tsPosition: ${JSON.stringify(tsPosition)}`);
 
         if (!this.plugin.civetLanguageServiceHost) {
@@ -89,8 +89,8 @@ export class CivetDefinitionsProvider implements DefinitionsProvider {
                 const tsEndPos = adjustTsPositionForLeadingNewline(tsEndPosUnadjusted, hostTsCode);
                 console.log(`[CivetDefinitionsProvider] tsStartPos: ${JSON.stringify(tsStartPos)}, tsEndPos: ${JSON.stringify(tsEndPos)}`);
 
-                let remappedContentStart = civetRemapPosition(tsStartPos, rawSourcemapLines);
-                let remappedContentEnd = civetRemapPosition(tsEndPos, rawSourcemapLines);
+                let remappedContentStart = remapPosition(tsStartPos, rawSourcemapLines);
+                let remappedContentEnd = remapPosition(tsEndPos, rawSourcemapLines);
                 console.log(`[CivetDefinitionsProvider] remappedContentStart: ${JSON.stringify(remappedContentStart)}, remappedContentEnd: ${JSON.stringify(remappedContentEnd)}`);
 
                 if (originalContentLineOffset > 0) {

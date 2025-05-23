@@ -3,8 +3,14 @@ import { CodeActionsProvider, CompletionsProvider } from '../../interfaces';
 import { LSAndTSDocResolver } from '../../typescript/LSAndTSDocResolver';
 import { LSConfigManager } from '../../../ls-config';
 import { CodeAction, CodeActionContext, Range, WorkspaceEdit, TextEdit, Position } from 'vscode-languageserver';
-import { CivetPlugin, getCivetTagInfo, svelteDocPositionToCivetContentRelative, adjustTsPositionForLeadingNewline, civetContentPositionToSvelteDocRelative, MappingPosition } from '../CivetPlugin';
-import { remapPosition as civetRemapPosition, forwardMap as civetForwardMap } from '../civetUtils';
+import { CivetPlugin, getCivetTagInfo } from '../CivetPlugin';
+import { remapPosition, 
+    forwardMapRaw, 
+    svelteDocPositionToCivetContentRelative, 
+    adjustTsPositionForLeadingNewline, 
+    civetContentPositionToSvelteDocRelative, 
+    type RawVLQSourcemapLines, 
+    type MappingPosition } from '../util';
 import { CodeActionsProviderImpl } from '../../typescript/features/CodeActionsProvider';
 import { CompletionsProviderImpl } from '../../typescript/features/CompletionProvider'; // Required by CodeActionsProviderImpl
 import * as ts from 'typescript';
@@ -63,8 +69,8 @@ export class CivetCodeActionsProvider implements CodeActionsProvider {
         if (!rawSourcemapLines) return [];
 
         // 3. Map adjusted Civet content range to TS range
-        const tsStart = civetForwardMap(rawSourcemapLines, adjustedCivetStart);
-        const tsEnd = civetForwardMap(rawSourcemapLines, adjustedCivetEnd);
+        const tsStart = forwardMapRaw(rawSourcemapLines, adjustedCivetStart);
+        const tsEnd = forwardMapRaw(rawSourcemapLines, adjustedCivetEnd);
         const tsRange = Range.create(tsStart, tsEnd);
 
         // 4. Get code actions from the TS provider using the mapped TS range
@@ -107,8 +113,8 @@ export class CivetCodeActionsProvider implements CodeActionsProvider {
                 for (const tsTextEdit of tsEdit.changes[uri]) {
                     const tsRange = tsTextEdit.range;
 
-                    const remappedStartPos = civetRemapPosition(tsRange.start, rawSourcemapLines);
-                    const remappedEndPos = civetRemapPosition(tsRange.end, rawSourcemapLines);
+                    const remappedStartPos = remapPosition(tsRange.start, rawSourcemapLines);
+                    const remappedEndPos = remapPosition(tsRange.end, rawSourcemapLines);
 
                     let finalSvelteStart = civetContentPositionToSvelteDocRelative(
                         originalContentLineOffset > 0 ? { line: remappedStartPos.line + originalContentLineOffset, character: remappedStartPos.character } : remappedStartPos,

@@ -25,97 +25,13 @@ import { LSAndTSDocResolver } from '../typescript/LSAndTSDocResolver';
 import { SelectionRangeProviderImpl } from '../typescript/features/SelectionRangeProvider';
 import { CivetLanguageServiceHost, SourceMapLinesEntry } from '../../typescriptServiceHost';
 import * as ts from 'typescript';
-import { forwardMap as civetForwardMap } from './civetUtils';
+import { forwardMapRaw, RawVLQSourcemapLines, svelteDocPositionToCivetContentRelative, civetContentPositionToSvelteDocRelative, adjustTsPositionForLeadingNewline, transformCivetSourcemapLines } from './util';
 
-import { CivetDiagnosticsProvider } from './features/CivetDiagnosticProvider';
+import { CivetDiagnosticsProvider } from './features/CivetDiagnosticsProvider';
 import { CivetHoverProvider } from './features/CivetHoverProvider';
 import { CivetCompletionsProvider } from './features/CivetCompletionsProvider';
 import { CivetCodeActionsProvider } from './features/CivetCodeActionsProvider';
 import { CivetDefinitionsProvider } from './features/CivetDefinitionsProvider';
-
-/**
- * Transforms the Civet compiler's sourcemap line structure (decoded VLQ segments per line)
- * into the flat SourceMapLinesEntry[] expected by CivetLanguageServiceHost.
- */
-export function transformCivetSourcemapLines(decodedMappings: number[][][]): SourceMapLinesEntry[] {
-    const transformed: SourceMapLinesEntry[] = [];
-    if (!decodedMappings) return transformed;
-
-    decodedMappings.forEach((lineSegments, generatedLineIndex) => {
-        if (!lineSegments) return;
-
-        for (const segment of lineSegments) {
-            if (!segment || segment.length < 4) { 
-                continue; 
-            }
-            const generatedColumn = segment[0]; 
-            const originalSourceLine = segment[2];
-            const originalSourceColumn = segment[3];
-            
-            if (originalSourceLine < 0 ) {
-                continue;
-            }
-            const clampedOriginalSourceColumn = Math.max(0, originalSourceColumn);
-
-            transformed.push({
-                originalLine: originalSourceLine + 1,      
-                originalColumn: clampedOriginalSourceColumn, 
-                generatedLine: generatedLineIndex + 1,     
-                generatedColumn: generatedColumn,          
-            });
-        }
-    });
-    return transformed;
-}
-
-export interface MappingPosition { 
-    line: number; 
-    character: number; 
-}
-
-// This is EXPORTED because CivetLanguageServiceHost also needs to remap positions from TS to Civet
-// For now, its main use is within CivetPlugin for LSP features -> NOW USED BY PROVIDERS
-export function remapPosition(sourcemapLines: SourceMapLinesEntry[], generatedPosition: MappingPosition): MappingPosition {
-    if (!sourcemapLines || sourcemapLines.length === 0) {
-        return generatedPosition;
-    }
-
-    const generatedLine1Indexed = generatedPosition.line + 1;
-    let bestMatch: SourceMapLinesEntry | null = null;
-
-    for (const entry of sourcemapLines) {
-        if (entry.generatedLine === generatedLine1Indexed && entry.generatedColumn <= generatedPosition.character) {
-            if (!bestMatch || 
-                entry.generatedColumn > bestMatch.generatedColumn || 
-                (entry.generatedColumn === bestMatch.generatedColumn && entry.originalColumn < bestMatch.originalColumn)) {
-                bestMatch = entry;
-            }
-        }
-    }
-
-    if (bestMatch) {
-        const charOffset = generatedPosition.character - bestMatch.generatedColumn;
-        const result = {
-            line: bestMatch.originalLine - 1, 
-            character: bestMatch.originalColumn + charOffset
-        };
-        return result;
-    }
-    
-    const lineMatches = sourcemapLines.filter(entry => entry.generatedLine === generatedLine1Indexed);
-    if (lineMatches.length > 0) {
-        lineMatches.sort((a, b) => a.generatedColumn - b.generatedColumn);
-        const fallbackResult = {
-            line: lineMatches[0].originalLine - 1,
-            character: lineMatches[0].originalColumn
-        };
-        console.warn(`[remapPosition] WARN: No direct char match. Fallback to line match. Generated: ${JSON.stringify(generatedPosition)} -> Result: ${JSON.stringify(fallbackResult)}`);
-        return fallbackResult;
-    }
-
-    console.warn(`[remapPosition] WARN: No mapping found for ${JSON.stringify(generatedPosition)}. Returning generatedPosition.`);
-    return generatedPosition; 
-}
 
 export function getCivetTagInfo(document: Document): TagInformation | null {
     let civetTagInfo: TagInformation | null = null;
@@ -157,32 +73,6 @@ export function getCivetTagInfo(document: Document): TagInformation | null {
     return civetTagInfo;
 }
 
-export function adjustTsPositionForLeadingNewline(tsPosition: Position, tsHostCode: string): Position {
-    if (tsHostCode.startsWith('\n') && tsPosition.line > 0) {
-        return { line: tsPosition.line - 1, character: tsPosition.character };
-    }
-    return tsPosition;
-}
-
-export function svelteDocPositionToCivetContentRelative(svelteDocPos: Position, scriptStartPosition: Position): MappingPosition {
-    const contentRelativeLine = svelteDocPos.line - scriptStartPosition.line;
-    let contentRelativeChar = svelteDocPos.character;
-    if (svelteDocPos.line === scriptStartPosition.line) {
-        contentRelativeChar = svelteDocPos.character - scriptStartPosition.character;
-    }
-    contentRelativeChar = Math.max(0, contentRelativeChar); 
-    return { line: contentRelativeLine, character: contentRelativeChar };
-}
-
-export function civetContentPositionToSvelteDocRelative(contentRelativePos: MappingPosition, scriptStartPosition: Position): Position {
-    const svelteDocLine = contentRelativePos.line + scriptStartPosition.line;
-    let svelteDocChar = contentRelativePos.character;
-    if (contentRelativePos.line === 0) { 
-        svelteDocChar = contentRelativePos.character + scriptStartPosition.character;
-    }
-    return { line: svelteDocLine, character: svelteDocChar };
-}
-
 export class CivetPlugin implements
     DiagnosticsProvider,
     HoverProvider,
@@ -199,7 +89,7 @@ export class CivetPlugin implements
     private definitionsProvider: CivetDefinitionsProvider;
     private selectionRangeProvider: SelectionRangeProviderImpl;
 
-    public compiledCivetCache = new Map<string, { version: number, compiledTsCode: string, sourcemapLines: SourceMapLinesEntry[], rawSourcemapLines: number[][][], originalContentLineOffset: number }>();
+    public compiledCivetCache = new Map<string, { version: number, compiledTsCode: string, sourcemapLines: SourceMapLinesEntry[], rawSourcemapLines: RawVLQSourcemapLines, originalContentLineOffset: number }>();
     public civetLanguageServiceHost: CivetLanguageServiceHost;
 
     constructor(
@@ -331,7 +221,7 @@ export class CivetPlugin implements
     
             const compiledTsCode = compileResult.code;
             let finalSourcemapLines: SourceMapLinesEntry[] = [];
-            let rawSourcemapForCache: number[][][] = [];
+            let rawSourcemapForCache: RawVLQSourcemapLines = [];
     
             if (compileResult.sourceMap && compileResult.sourceMap.lines) {
                 finalSourcemapLines = transformCivetSourcemapLines(compileResult.sourceMap.lines);
