@@ -205,4 +205,195 @@ const useDeeperProp = myObj.level1.level2.deeperProp`.trim();
             assert.deepStrictEqual(defLink.targetSelectionRange, expectedTargetSelectionRange, 'Definition target selection range for deeperProp');
         }
     });
+
+    // ---- Test Case for Nested Number Property ----
+    const numberTestFileUri = 'file:///test-lazerfocused-number-plugin.svelte';
+    const nestedNumberCivetSourceCode = `
+<script lang="civet">
+// Nested number test
+myNumObj := {
+  group: {
+    count: 123
+  }
+}
+useCount := myNumObj.group.count
+</script>
+    `;
+    const expectedNestedNumberCompiledTs = `// Nested number test
+const myNumObj = {
+  group: {
+    count: 123
+  }
+}
+const useCount = myNumObj.group.count`.trim();
+
+    it('getDefinitions - for nested number property `myNumObj.group.count`', async () => {
+        console.log('--- [LAZERFOCUS TEST] Running getDefinitions for NESTED NUMBER property ---');
+        
+        const numberDocument = createPluginDocument(numberTestFileUri, nestedNumberCivetSourceCode);
+        await plugin.handleDocumentChange(numberDocument);
+
+        const cachedNumberData = plugin.getCompiledCivetDataForTest(numberTestFileUri);
+        if (cachedNumberData) {
+            assert.strictEqual(cachedNumberData.compiledTsCode.trim(), expectedNestedNumberCompiledTs, "Nested number compiled TS code does not match expected");
+        } else {
+            assert.fail('--- [LAZERFOCUS TEST] FAILED to retrieve cached data for nested number test ---');
+        }
+
+        // Position in Svelte document (0-indexed):
+        // [Line 0] <empty line>
+        // [Line 1] <script lang="civet">
+        // [Line 2] // Nested number test
+        // [Line 3] myNumObj := {
+        // [Line 4]   group: {
+        // [Line 5]     count: 123  <-- Definition target
+        // [Line 6]   }
+        // [Line 7] }
+        // [Line 8] useCount := myNumObj.group.count <-- Usage target (c*o*unt)
+        // 'useCount := myNumObj.group.' is 26 chars. 'c' is at char 26.
+        const documentPosition = pos(8, 26); 
+        const definitions = await plugin.getDefinitions(numberDocument, documentPosition);
+
+        assert.ok(definitions && definitions.length > 0, 'Should find a definition for `count`');
+        if (definitions.length > 0) {
+            const defLink = definitions[0] as DefinitionLink;
+            assert.strictEqual(defLink.targetUri, numberTestFileUri, 'Definition target URI for count');
+            // Expected: count: 123
+            // Svelte line 5: '    count: 123'
+            // '    count' -> start char 4, end char 4 + 'count'.length = 9
+            const expectedTargetSelectionRange: Range = { start: pos(5, 4), end: pos(5, 9) };
+            assert.deepStrictEqual(defLink.targetSelectionRange, expectedTargetSelectionRange, 'Definition target selection range for count');
+        }
+    });
+
+    // ---- Test Case for Very Deeply Nested Property (4 levels) ----
+    const veryDeepTestFileUri = 'file:///test-lazerfocused-verydeep-plugin.svelte';
+    const veryDeepCivetSourceCode = `
+<script lang="civet">
+// Very deep nest test
+deepObj := {
+  l1: {
+    l2: {
+      l3: {
+        l4Prop: "final"
+      }
+    }
+  }
+}
+useVeryDeepProp := deepObj.l1.l2.l3.l4Prop
+</script>
+    `;
+    const expectedVeryDeepCompiledTs = `// Very deep nest test
+const deepObj = {
+  l1: {
+    l2: {
+      l3: {
+        l4Prop: "final"
+      }
+    }
+  }
+}
+const useVeryDeepProp = deepObj.l1.l2.l3.l4Prop`.trim();
+
+    it('getDefinitions - for very deeply nested property `deepObj.l1.l2.l3.l4Prop`', async () => {
+        console.log('--- [LAZERFOCUS TEST] Running getDefinitions for VERY DEEPLY NESTED property ---');
+        
+        const veryDeepDocument = createPluginDocument(veryDeepTestFileUri, veryDeepCivetSourceCode);
+        await plugin.handleDocumentChange(veryDeepDocument);
+
+        const cachedVeryDeepData = plugin.getCompiledCivetDataForTest(veryDeepTestFileUri);
+        if (cachedVeryDeepData) {
+            assert.strictEqual(cachedVeryDeepData.compiledTsCode.trim(), expectedVeryDeepCompiledTs, "Very deep compiled TS code does not match expected");
+        } else {
+            assert.fail('--- [LAZERFOCUS TEST] FAILED to retrieve cached data for very deep test ---');
+        }
+
+        // Position in Svelte document (0-indexed):
+        // [Line 0] <empty line>
+        // [Line 1] <script lang="civet">
+        // [Line 2] // Very deep nest test
+        // [Line 3] deepObj := {
+        // [Line 4]   l1: {
+        // [Line 5]     l2: {
+        // [Line 6]       l3: {
+        // [Line 7]         l4Prop: "final"  <-- Definition target
+        // [Line 8]       }
+        // [Line 9]     }
+        // [Line 10]  }
+        // [Line 11] }
+        // [Line 12] useVeryDeepProp := deepObj.l1.l2.l3.l4Prop <-- Usage target (l*4*Prop)
+        // 'useVeryDeepProp := deepObj.l1.l2.l3.' is 35 chars. 'l' is at char 35.
+        const documentPosition = pos(12, 35);
+        const definitions = await plugin.getDefinitions(veryDeepDocument, documentPosition);
+
+        assert.ok(definitions && definitions.length > 0, 'Should find a definition for `l4Prop`');
+        if (definitions.length > 0) {
+            const defLink = definitions[0] as DefinitionLink;
+            assert.strictEqual(defLink.targetUri, veryDeepTestFileUri, 'Definition target URI for l4Prop');
+            // Expected: l4Prop: "final"
+            // Svelte line 7: '        l4Prop: "final"'
+            // '        l4Prop' -> start char 8, end char 8 + 'l4Prop'.length = 14
+            const expectedTargetSelectionRange: Range = { start: pos(7, 8), end: pos(7, 14) };
+            assert.deepStrictEqual(defLink.targetSelectionRange, expectedTargetSelectionRange, 'Definition target selection range for l4Prop');
+        }
+    });
+
+    // ---- Test Case for Nested Property with Separate Line Assignments ----
+    const separateLinesTestFileUri = 'file:///test-lazerfocused-separatelines-plugin.svelte';
+    const separateLinesCivetSourceCode = `
+<script lang="civet">
+// Separate lines assignment test
+mySepObj := {}
+mySepObj.first = {}
+mySepObj.first.second = "assigned_later"
+
+useSeparate := mySepObj.first.second
+</script>
+    `;
+    const expectedSeparateLinesCompiledTs = `// Separate lines assignment test
+const mySepObj = {}
+mySepObj.first = {}
+mySepObj.first.second = "assigned_later"
+
+const useSeparate = mySepObj.first.second`.trim();
+
+    it('getDefinitions - for nested property `mySepObj.first.second` with separate line assignments', async () => {
+        console.log('--- [LAZERFOCUS TEST] Running getDefinitions for SEPARATE LINES ASSIGNMENT ---');
+        
+        const separateLinesDocument = createPluginDocument(separateLinesTestFileUri, separateLinesCivetSourceCode);
+        await plugin.handleDocumentChange(separateLinesDocument);
+
+        const cachedSeparateLinesData = plugin.getCompiledCivetDataForTest(separateLinesTestFileUri);
+        if (cachedSeparateLinesData) {
+            assert.strictEqual(cachedSeparateLinesData.compiledTsCode.trim(), expectedSeparateLinesCompiledTs, "Separate lines compiled TS code does not match expected");
+        } else {
+            assert.fail('--- [LAZERFOCUS TEST] FAILED to retrieve cached data for separate lines test ---');
+        }
+
+        // Position in Svelte document (0-indexed):
+        // [Line 0] <empty line>
+        // [Line 1] <script lang="civet">
+        // [Line 2] // Separate lines assignment test
+        // [Line 3] mySepObj := {}
+        // [Line 4] mySepObj.first = {}
+        // [Line 5] mySepObj.first.second = "assigned_later"  <-- Definition target
+        // [Line 6] 
+        // [Line 7] useSeparate := mySepObj.first.second <-- Usage target (s*e*cond)
+        // 'useSeparate := mySepObj.first.' is 29 chars. 's' is at char 29.
+        const documentPosition = pos(7, 29);
+        const definitions = await plugin.getDefinitions(separateLinesDocument, documentPosition);
+
+        assert.ok(definitions && definitions.length > 0, 'Should find a definition for `second` (separate lines)');
+        if (definitions.length > 0) {
+            const defLink = definitions[0] as DefinitionLink;
+            assert.strictEqual(defLink.targetUri, separateLinesTestFileUri, 'Definition target URI for second (separate lines)');
+            // Expected: mySepObj.first.second = "assigned_later"
+            // Target is 'second' in this line.
+            // Svelte line 5: 'mySepObj.first.second = "assigned_later"'
+            // 'mySepObj.first.' is 15 chars. 'second' starts at char 15.
+            // 'second'.length is 6. So ends at char 15+6=21
+            const expectedTargetSelectionRange: Range = { start: pos(5, 15), end: pos(5, 21) };
+            assert.deepStrictEqual(defLink.targetSelectionRange, expectedTargetSelectionRange, 'Definition target selection range for second (separate lines)');
+        }
+    });
 });
