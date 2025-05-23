@@ -137,6 +137,16 @@ export class CivetLanguageServiceHost implements ts.LanguageServiceHost {
     }
 
     /**
+     * Get semantic diagnostics for a Civet snippet.
+     */
+    public getSemanticDiagnostics(uri: string): ts.Diagnostic[] {
+        // Note: getSemanticDiagnostics takes a fileName, which is our uri.
+        // The language service should be aware of this file via the host methods.
+        // Force re-evaluation
+        return this.languageService.getSemanticDiagnostics(uri);
+    }
+
+    /**
      * Convert an LSP Position into a TS offset in the in-memory code.
      */
     private positionToOffset(uri: string, position: Position): number {

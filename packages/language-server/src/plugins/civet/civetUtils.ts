@@ -1,90 +1,86 @@
-import assert from 'assert';
-import type { Position } from 'vscode-languageserver';
+// Utility functions for Civet sourcemap position mapping, inspired by @danielx/civet ts-diagnostic and util implementations.
 
-/**
- * Raw sourcemap lines type from Civet compiler (array of mapping segments).
- */
-export type SourcemapLines = number[][][];
-
-/**
- * Maps a position in the original Civet source forward to the generated TypeScript code.
- */
-export function forwardMap(sourcemapLines: SourcemapLines, position: Position): Position {
-  assert('line' in position, 'position must have line');
-  assert('character' in position, 'position must have character');
-
-  const { line: origLine, character: origOffset } = position;
-  let col = 0;
-  let bestLine = -1, bestOffset = -1;
-  let foundLine = -1, foundOffset = -1;
-
-  sourcemapLines.forEach((mLine, i) => {
-    col = 0;
-    mLine.forEach(mapping => {
-      col += mapping[0];
-      if (mapping.length === 4) {
-        const [_genColDelta, _srcIdx, srcLine, srcOffset] = mapping;
-        if (
-          srcLine <= origLine &&
-          ((srcLine > bestLine && srcOffset <= origOffset) ||
-           (srcLine === bestLine && srcOffset <= origOffset && srcOffset >= bestOffset))
-        ) {
-          bestLine = srcLine;
-          bestOffset = srcOffset;
-          foundLine = i;
-          foundOffset = col;
-        }
-      }
-    });
-  });
-
-  if (foundLine >= 0) {
-    const genLine = foundLine + origLine - bestLine;
-    const genOffset = foundOffset + origOffset - bestOffset;
-    return { line: genLine, character: genOffset };
-  }
-  return position;
+export interface MappingPosition {
+    line: number;       // 0-indexed line
+    character: number;  // 0-indexed character
 }
 
 /**
- * Maps a position in the generated TypeScript code back to the original Civet source.
- * Direct port of the implementation from @danielx/civet/ts-diagnostic.
+ * Forward map a source position (in Civet code) to generated TS position
+ * using raw CVT VLQ-decoded sourcemap lines.
  */
-export function remapPosition(sourcemapLines: SourcemapLines, position: Position): Position {
-  assert('line' in position, 'position must have line');
-  assert('character' in position, 'position must have character');
+export function forwardMap(
+    sourcemapLines: number[][][],
+    position: MappingPosition
+): MappingPosition {
+    const { line: origLine, character: origOffset } = position;
+    let bestLine = -1;
+    let bestOffset = -1;
+    let foundGenLine = -1;
+    let foundGenOffset = -1;
 
-  if (!sourcemapLines) return position;
-  
-  const { line, character } = position;
-  const textLine = sourcemapLines[line];
-  if (!textLine?.length) return position;
-  
-  let i = 0, p = 0, l = textLine.length;
-  let lastMapping, lastMappingPosition = 0;
-  
-  while (i < l) {
-    const mapping = textLine[i];
-    p += mapping[0];
-    if (mapping.length === 4) {
-      lastMapping = mapping;
-      lastMappingPosition = p;
+    for (let genLine = 0; genLine < sourcemapLines.length; genLine++) {
+        const segments = sourcemapLines[genLine];
+        let col = 0;
+        for (const mapping of segments) {
+            // mapping: [genColDelta, sourceFileIndex?, srcLine, srcOffset, nameIdx?]
+            const delta = mapping[0] || 0;
+            col += delta;
+            if (mapping.length >= 4) {
+                const srcLine = mapping[2];
+                const srcOffset = mapping[3];
+                if (srcLine <= origLine) {
+                    if (
+                        srcLine > bestLine ||
+                        (srcLine === bestLine && srcOffset >= bestOffset)
+                    ) {
+                        bestLine = srcLine;
+                        bestOffset = srcOffset;
+                        foundGenLine = genLine;
+                        foundGenOffset = col;
+                    }
+                }
+            }
+        }
     }
-    if (p >= character) {
-      break;
+
+    if (foundGenLine >= 0) {
+        const genLine = foundGenLine + (origLine - bestLine);
+        const genOffset = foundGenOffset + (origOffset - bestOffset);
+        return { line: genLine, character: genOffset };
     }
-    i++;
-  }
-  
-  if (lastMapping) {
-    const srcLine = lastMapping[2];
-    const srcChar = lastMapping[3];
-    const newChar = srcChar + character - lastMappingPosition;
-    return {
-      line: srcLine,
-      character: newChar
-    };
-  } else {
+
     return position;
-  }
+}
+
+/**
+ * Remap a generated TS position back to original Civet source position
+ * using raw CVT VLQ-decoded sourcemap lines.
+ */
+export function remapPosition(
+    position: MappingPosition,
+    sourcemapLines: number[][][]
+): MappingPosition {
+    const { line, character } = position;
+    const segments = sourcemapLines[line] || [];
+    if (!segments.length) return position;
+    let p = 0;
+    let lastMapping: number[] | undefined;
+    let lastMappingPos = 0;
+    for (const mapping of segments) {
+        const delta = mapping[0] || 0;
+        p += delta;
+        if (mapping.length >= 4) {
+            lastMapping = mapping;
+            lastMappingPos = p;
+        }
+        if (p >= character) break;
+    }
+    if (lastMapping) {
+        const srcLine = lastMapping[2];
+        const srcOffset = lastMapping[3];
+        const newChar = srcOffset + (character - lastMappingPos);
+        return { line: srcLine, character: newChar };
+    }
+    return position;
 } 
