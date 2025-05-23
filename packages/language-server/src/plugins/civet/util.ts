@@ -1,8 +1,19 @@
-import { Position, Range } from 'vscode-languageserver';
-import { SourceMapLinesEntry } from '../../typescriptServiceHost';
+// Consolidated imports
+import { Position, 
+  Range, 
+  CompletionContext, 
+  CompletionList, 
+  TextEdit, 
+  CompletionItemKind, 
+  Hover, 
+  Diagnostic, 
+  DiagnosticSeverity, 
+  MarkupKind, 
+  CompletionItem as LSPCompletionItem, DefinitionLink } from 'vscode-languageserver';
+import { Document } from '../../lib/documents';
 import * as ts from 'typescript';
-import { CivetLanguageServiceHost } from '../../typescriptServiceHost';
-
+import { CivetLanguageServiceHost, SourceMapLinesEntry } from '../../typescriptServiceHost';
+import { scriptElementKindToCompletionItemKind } from '../typescript/utils';
 // Import the original remappers with an underscore prefix
 import {
   remapPosition as _remapPosition,
@@ -168,9 +179,6 @@ export function adjustTsPositionForLeadingNewline(
 }
 
 // ---- PHASE 2: High-level converter for completions ----
-import { Document } from '../../lib/documents';
-import { CompletionContext, CompletionList, TextEdit, CompletionItemKind, Position as LSPPosition, Range as LSPRange, CompletionItem } from 'vscode-languageserver';
-import { scriptElementKindToCompletionItemKind } from '../typescript/utils';
 
 /**
  * Convert TS completions from CivetLanguageServiceHost into a Svelte LSP CompletionList,
@@ -178,13 +186,13 @@ import { scriptElementKindToCompletionItemKind } from '../typescript/utils';
  */
 export async function convertCompletions(
   document: Document,
-  position: LSPPosition,
+  position: Position,
   completionContext: CompletionContext | undefined,
   host: CivetLanguageServiceHost,
   compiledTsCode: string,
   rawSourcemapLines: RawVLQSourcemapLines,
   originalContentLineOffset: number,
-  scriptStartPosition: LSPPosition
+  scriptStartPosition: Position
 ): Promise<CompletionList | null> {
   // 1. Map Svelte doc position to Civet-relative
   let contentPos = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
@@ -205,7 +213,7 @@ export async function convertCompletions(
 
   const hostCode = host.getScriptInfo(document.uri)?.code || compiledTsCode;
   // helper: offset -> LSP Position in TS host
-  const offsetToPositionInTs = (offset: number): LSPPosition => {
+  const offsetToPositionInTs = (offset: number): Position => {
     let line = 0;
     let character = 0;
     for (let i = 0; i < offset && i < hostCode.length; i++) {
@@ -215,8 +223,8 @@ export async function convertCompletions(
     return { line, character };
   };
 
-  const items: CompletionItem[] = tsCompletions.entries.map((entry: ts.CompletionEntry) => {
-    const item: CompletionItem = { label: entry.name, kind: scriptElementKindToCompletionItemKind(entry.kind) };
+  const items: LSPCompletionItem[] = tsCompletions.entries.map((entry: ts.CompletionEntry) => {
+    const item: LSPCompletionItem = { label: entry.name, kind: scriptElementKindToCompletionItemKind(entry.kind) };
     if (entry.replacementSpan) {
       const start = offsetToPositionInTs(entry.replacementSpan.start);
       const end = offsetToPositionInTs(entry.replacementSpan.start + entry.replacementSpan.length);
@@ -229,7 +237,7 @@ export async function convertCompletions(
         : scriptStartPosition;
       const svelteStart = civetContentPositionToSvelteDocRelative(remapStart, effectiveStartPos);
       const svelteEnd = civetContentPositionToSvelteDocRelative(remapEnd, effectiveStartPos);
-      item.textEdit = TextEdit.replace(LSPRange.create(svelteStart, svelteEnd), entry.name);
+      item.textEdit = TextEdit.replace(Range.create(svelteStart, svelteEnd), entry.name);
     } else {
       item.insertText = entry.name;
     }
@@ -240,4 +248,159 @@ export async function convertCompletions(
   return CompletionList.create(items, tsCompletions.isGlobalCompletion);
 }
 
-// ---- End of Phase 2 stub ---- 
+// ---- End of Phase 2 stub ----
+
+// ---- PHASE 2: High-level converter for hover ----
+
+/**
+ * Convert TS QuickInfo into a Svelte LSP Hover, with sourcemap mapping.
+ */
+export function convertHover(
+  document: Document,
+  position: Position,
+  host: CivetLanguageServiceHost,
+  compiledTsCode: string,
+  rawSourcemapLines: RawVLQSourcemapLines,
+  originalContentLineOffset: number,
+  scriptStartPosition: Position
+): Hover | null {
+  // 1. Map input position into Civet source
+  let contentPos = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
+  if (originalContentLineOffset > 0) {
+    contentPos = { line: Math.max(0, contentPos.line - originalContentLineOffset), character: contentPos.character };
+  }
+  // 2. Forward map to TS
+  const tsPos = forwardMapRaw(rawSourcemapLines, contentPos);
+  // 3. Get quickInfo
+  const info = host.getQuickInfo(document.uri, tsPos);
+  if (!info) return null;
+  const display = ts.displayPartsToString(info.displayParts);
+  const documentation = info.documentation ? ts.displayPartsToString(info.documentation) : '';
+  // 4. Map textSpan -> LSP range
+  const offsetToPos = (offset: number): Position => {
+    let line = 0, char = 0;
+    for (let i = 0; i < offset && i < compiledTsCode.length; i++) {
+      if (compiledTsCode[i] === '\n') { line++; char = 0; }
+      else { char++; }
+    }
+    return { line, character: char };
+  };
+  const start = adjustTsPositionForLeadingNewline(offsetToPos(info.textSpan.start), compiledTsCode);
+  const end = adjustTsPositionForLeadingNewline(offsetToPos(info.textSpan.start + info.textSpan.length), compiledTsCode);
+  const remappedStart = remapPosition(start, rawSourcemapLines);
+  const remappedEnd = remapPosition(end, rawSourcemapLines);
+  const effectiveStart = originalContentLineOffset > 0
+    ? { line: scriptStartPosition.line + originalContentLineOffset, character: scriptStartPosition.character }
+    : scriptStartPosition;
+  const svelteStart = civetContentPositionToSvelteDocRelative(remappedStart, effectiveStart);
+  const svelteEnd = civetContentPositionToSvelteDocRelative(remappedEnd, effectiveStart);
+
+  return {
+    contents: {
+      kind: MarkupKind.Markdown,
+      value: '```typescript\n' + display + '\n```\n' + documentation
+    },
+    range: { start: svelteStart, end: svelteEnd }
+  };
+}
+
+// ---- PHASE 2: High-level converter for diagnostics ----
+/**
+ * Convert TS semantic diagnostics into Svelte LSP Diagnostics, with sourcemap mapping.
+ */
+export function convertDiagnostics(
+  document: Document,
+  host: CivetLanguageServiceHost,
+  compiledTsCode: string,
+  rawSourcemapLines: RawVLQSourcemapLines,
+  originalContentLineOffset: number,
+  scriptStartPosition: Position
+): Diagnostic[] {
+  const tsDiags = host.getSemanticDiagnostics(document.uri) ?? [];
+  return tsDiags.map(diag => {
+    const message = flattenDiagnosticMessageText(diag.messageText);
+    if (diag.start === undefined || diag.length === undefined) {
+      return { message, range: { start: scriptStartPosition, end: scriptStartPosition }, severity: DiagnosticSeverity.Error, source: 'civet' };
+    }
+    // map start/end
+    const offsetToPos = (offset: number): Position => {
+      let line = 0, char = 0;
+      for (let i = 0; i < offset && i < compiledTsCode.length; i++) {
+        if (compiledTsCode[i] === '\n') { line++; char = 0; }
+        else { char++; }
+      }
+      return { line, character: char };
+    };
+    const tsStart = adjustTsPositionForLeadingNewline(offsetToPos(diag.start), compiledTsCode);
+    const tsEnd = adjustTsPositionForLeadingNewline(offsetToPos(diag.start + diag.length), compiledTsCode);
+    const remapped = remapRange({ start: tsStart, end: tsEnd }, rawSourcemapLines);
+    const effectiveStart = originalContentLineOffset > 0
+      ? { line: scriptStartPosition.line + originalContentLineOffset, character: scriptStartPosition.character }
+      : scriptStartPosition;
+    const svelteStart = civetContentPositionToSvelteDocRelative(remapped.start, effectiveStart);
+    const svelteEnd = civetContentPositionToSvelteDocRelative(remapped.end, effectiveStart);
+    return { message, range: { start: svelteStart, end: svelteEnd }, severity: diag.category === ts.DiagnosticCategory.Error ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning, code: diag.code, source: 'civet' };
+  });
+}
+
+// ---- End of Phase 2 stub ----
+
+// ---- PHASE 2: High-level converter for definitions ----
+
+/**
+ * Convert TS definitions into Svelte LSP DefinitionLink[], with sourcemap mapping.
+ */
+export function convertDefinitions(
+  document: Document,
+  position: Position,
+  host: CivetLanguageServiceHost,
+  compiledTsCode: string,
+  rawSourcemapLines: RawVLQSourcemapLines,
+  originalContentLineOffset: number,
+  scriptStartPosition: Position
+): DefinitionLink[] {
+  // 1. Map input to Civet content
+  let contentPos = svelteDocPositionToCivetContentRelative(position, scriptStartPosition);
+  if (originalContentLineOffset > 0) {
+    contentPos = { line: Math.max(0, contentPos.line - originalContentLineOffset), character: contentPos.character };
+  }
+  // 2. Forward map to TS
+  const tsPos = forwardMapRaw(rawSourcemapLines, contentPos);
+  // 3. Query TS definitions
+  const tsDefs = host.getDefinitions(document.uri, tsPos) ?? [];
+  const hostCode = host.getScriptInfo(document.uri)?.code || compiledTsCode;
+  const offsetToPos = (offset: number): Position => {
+    let line = 0, char = 0;
+    for (let i = 0; i < offset && i < hostCode.length; i++) {
+      if (hostCode[i] === '\n') { line++; char = 0; } else { char++; }
+    }
+    return { line, character: char };
+  };
+  const result: DefinitionLink[] = [];
+  for (const tsDef of tsDefs) {
+    if (!tsDef.textSpan) continue;
+    const startOff = tsDef.textSpan.start;
+    const len = tsDef.textSpan.length;
+    const startPos = adjustTsPositionForLeadingNewline(offsetToPos(startOff), hostCode);
+    const endPos = adjustTsPositionForLeadingNewline(offsetToPos(startOff + len), hostCode);
+    let remapStart = remapPosition(startPos, rawSourcemapLines);
+    let remapEnd = remapPosition(endPos, rawSourcemapLines);
+    if (originalContentLineOffset > 0) {
+      remapStart = { line: remapStart.line + originalContentLineOffset, character: remapStart.character };
+      remapEnd = { line: remapEnd.line + originalContentLineOffset, character: remapEnd.character };
+    }
+    const targetStart = civetContentPositionToSvelteDocRelative(remapStart, scriptStartPosition);
+    const targetEnd = civetContentPositionToSvelteDocRelative(remapEnd, scriptStartPosition);
+    const targetRange = Range.create(targetStart, targetEnd);
+    const originRange = Range.create(position, { line: position.line, character: position.character + 1 });
+    result.push({
+      originSelectionRange: originRange,
+      targetRange,
+      targetUri: tsDef.fileName,
+      targetSelectionRange: targetRange
+    });
+  }
+  return result;
+}
+
+// ---- Export high-level converters ---- 

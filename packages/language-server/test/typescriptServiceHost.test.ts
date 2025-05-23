@@ -1,7 +1,7 @@
 import assert from 'assert';
 import * as civet from '@danielx/civet';
 import { CivetLanguageServiceHost, SourceMapLinesEntry } from '../src/typescriptServiceHost';
-import { transformCivetSourcemapLines } from '../src/plugins/civet/CivetPlugin';
+import { transformCivetSourcemapLines } from '../src/plugins/civet/util';
 import type { Position } from 'vscode-languageserver-types'; // Using a more standard type import
 
 // Helper to create Position objects

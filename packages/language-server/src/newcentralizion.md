@@ -23,7 +23,7 @@ This document tracks our two-phase effort to collapse all Civet sourcemap and ma
   - [x] `features/CivetCodeActionsProvider.ts`
   - (any other Civet feature under `features/`)
 
-- [ ] Remove or deprecate `civetUtils.ts` once all functions are migrated.
+- [x] Remove or deprecate `civetUtils.ts` once all functions are migrated.
 
 - [x] Remove the flat-entry `remapPosition` in `CivetPlugin.ts`.
 
@@ -34,15 +34,15 @@ This document tracks our two-phase effort to collapse all Civet sourcemap and ma
 ## Phase 2: Centralize high-level converters
 
 - [ ] In `src/plugins/civet/util.ts`, implement unified converter functions:
-  - `convertCompletions(tsCompletions, hostCode, rawSourcemapLines, scriptStartPos, originalContentLineOffset): CompletionList`
-  - `convertDiagnostics(tsDiagnostics, svelteDoc, rawSourcemapLines): Diagnostic[]`
-  - `convertDefinitions(tsDefs, svelteDoc, rawSourcemapLines): DefinitionLink[]`
-  - `convertHover(tsQuickInfo, svelteDoc, rawSourcemapLines): Hover`
-  - (and any others needed: code-actions, selection-range, document-symbols)
+  - [x] `convertCompletions(tsCompletions, hostCode, rawSourcemapLines, scriptStartPos, originalContentLineOffset): CompletionList`
+  - [x] `convertDiagnostics(tsDiagnostics, svelteDoc, rawSourcemapLines): Diagnostic[]`
+  - [x] `convertDefinitions(tsDefs, svelteDoc, rawSourcemapLines): DefinitionLink[]`
+  - [x] `convertHover(tsQuickInfo, svelteDoc, rawSourcemapLines): Hover`
+  - [ ] (any other needed converters: code-actions, selection-range, document-symbols)
 
-- [ ] Refactor each provider under `src/plugins/civet/features/` to call the new converter functions instead of manual mapping.
+- [x] Refactor each provider under `src/plugins/civet/features/` to call the new converter functions instead of manual mapping.
 
-- [ ] Refactor `CivetPlugin.ts` to leverage the new converters for diagnostics, hover, and definitions.
+- [x] Refactor `CivetPlugin.ts` to leverage the new converters for diagnostics, hover, and definitions.
 
 - [ ] Update tests under `packages/language-server/test/plugins/civet/` to expect ranges and outputs from the new converters; adjust snapshots if needed.
 
