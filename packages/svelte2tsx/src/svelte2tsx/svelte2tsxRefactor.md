@@ -1,5 +1,24 @@
 ### Pivoted Approach: Prioritizing a Robust `civet2tsx` Preprocessing Pipeline
 
+## Current Status
+
+- [x] Phase A1: Civet Preprocessor Module Setup
+- [ ] Phase A2: Integration in `index.ts`
+- [ ] Phase A3: Testing, Benchmarking & CI
+
+## Conclusions & Next Steps
+
+We have successfully completed Phase A1, including:
+- Civet compiler wrapper and dual sourcemap support (`compileCivet`).
+- Granular map normalization from Civet's `lines` to V3 sourcemaps (`normalizeCivetMap`).
+- Dedicated Civet preprocessor (`preprocessCivet`) with unit tests confirming TS code injection and mapping accuracy.
+- Source-map chaining implementation validated against real fixtures via dynamic tests.
+
+All unit tests now pass consistently. Next steps:
+1. Phase A2: Integrate `preprocessCivet()` into `svelte2tsx/index.ts`, generate base TSX output, chain Civet maps, and implement end-to-end integration tests.
+2. Phase A3: Establish integration tests (`index.integration.spec.ts`), benchmarks (`bench-civet-preprocessor.js`), and CI pipelines for performance and accuracy regression checks.
+3. Long-term: Simplify the `CivetPlugin` in `svelte-language-server` to consume the preprocessor output and eliminate manual mapping logic.
+
 **Rationale for Pivot**: Integrating Civet directly into the Language Server with custom sourcemap handling (`CivetLanguageServiceHost`, manual `forwardMap`/`remapPosition`) has proven complex and prone to subtle errors, especially with sourcemap inaccuracies from the Civet compiler and the intricacies of position mapping.
 
 **New Strategy**: Before further enhancing direct Civet support within the `svelte-language-server`'s `CivetPlugin`, we will first focus on creating a dedicated preprocessing step, analogous to `svelte2tsx`. This preprocessor will handle the transformation of Svelte files containing `<script lang="civet">` into a standard TSX output, accompanied by a robust and accurate sourcemap.
@@ -722,7 +741,7 @@ Throughout our deep dive into `normalizeCivetMap` and its integration within `sv
 1. Discovered and fixed an initial bug where identical generated columns caused valid sourcemap segments to be skipped.
 2. Identified how `source-map`'s `SourceMapGenerator` optimizes V3 `mappings`, collapsing adjacent character mappings into single segments at token starts.
 3. Updated tests to use `SourceMapConsumer.LEAST_UPPER_BOUND` bias and adjusted expectations to align with practical V3 behavior, ensuring accurate mappings for identifiers, parameters, and string literals.
-4. Validated that while Civet's internal `lines` format offers per-character precision, the standard V3 map reliably locates token starts—sufficient for hover and go-to-definition features.
+4. Validated that while Civet's internal `lines` format offers per-character granularity, the standard V3 map reliably locates token starts—sufficient for hover and go-to-definition features.
 5. Confirmed `normalizeCivetMap` correctly handles line offsets, script indentation, segment sorting, and edge-case mappings across all test scenarios.
 
 These findings underscore the trade-off between raw per-character granularity and V3 map compactness, and establish confidence in our current normalization approach.
