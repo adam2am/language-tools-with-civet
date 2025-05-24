@@ -61,7 +61,7 @@ describe('preprocessCivet', () => {
     assert.strictEqual(pos.column, 2, 'Original column should be 2');
   });
 
-  it.only('scenario 2:handles module and instance scripts with more complex Civet', async () => {
+  it('scenario 2:handles module and instance scripts with more complex Civet', async () => {
     const complexFixturePath = path.join(__dirname, 'fixtures', '2scripts.svelte');
     const complexSvelte = fs.readFileSync(complexFixturePath, 'utf-8');
     const complexFilename = 'ComplexComponent.svelte'; // Keep original filename for map source
