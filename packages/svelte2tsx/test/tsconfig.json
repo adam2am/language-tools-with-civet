@@ -4,8 +4,12 @@
         "target": "es6",
         "module": "commonjs",
         "moduleResolution": "node",
-        "esModuleInterop": true
+        "esModuleInterop": true,
+        "rootDir": ".."
     },
     "exclude": ["samples/**"],
-    "include": ["*.ts"]
+    "include": [
+        "../src/**/*.ts",
+        "**/*.ts"
+    ]
 }

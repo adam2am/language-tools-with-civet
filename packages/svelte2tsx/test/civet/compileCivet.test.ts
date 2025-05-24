@@ -6,6 +6,7 @@ describe('compileCivet', () => {
   const civetCode = '\n  a := 1\n  if a > 0 \n    x := 42\n  else\n    y .= x + 1\n  '; // Stresstest code
     const filename = 'TestCivetFile.civet';
 
+
   it('returns a CivetLinesSourceMap by default', () => {
     const result = compileCivet(civetCode, filename); // Default: outputStandardV3Map is false
     console.log('\n--- CivetLinesSourceMap Test ---');
@@ -24,6 +25,7 @@ describe('compileCivet', () => {
       assert.strictEqual(map.source, civetCode, 'CivetLinesSourceMap.source should match input code');
     }
   });
+
 
   it('returns a StandardRawSourceMap when outputStandardV3Map is true', () => {
     const result = compileCivet(civetCode, filename, { outputStandardV3Map: true });

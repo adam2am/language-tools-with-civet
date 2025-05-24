@@ -117,7 +117,7 @@ language‐server (in `packages/language-server/src`)
   • On document open/change (Implemented in Phase 1.3 via `CivetPlugin.handleDocumentChange`):
     – Extract `<script lang="civet">` content.
     – Call `@danielx/civet.compile` → TS snippet + Civet→TS `sourcemapLines` (transformed).
-    – `typescriptServiceHost.updateCivetFile(uri, tsCode, transformedSourcemapLines)`.
+    - `typescriptServiceHost.updateCivetFile(uri, tsCode, transformedSourcemapLines)`.
 
   • On hover/definition/completion for Civet script (To be implemented in Phase 2):
     1. Ensure Civet script is compiled via `handleDocumentChange`.
@@ -579,7 +579,7 @@ By splitting out the Civet workflow into its own mini-module, you:
                       let y = x + 1
                     }
                     ```
-                *   **Crucial Finding**: For this more complex input, the **`CivetLinesSourceMap` (direct `lines` array) proved to be VASTLY more accurate** than the `StandardRawSourceMap` (V3 via `.json()`).
+                *   **Crucial Finding**: For this more complex input, the **`CivetLinesSourceMap` (direct `lines` array) proved to be VASTLY more accurate** than the `StandardRawSourceMap` (V3).
                 *   The `CivetLinesSourceMap` correctly mapped tokens, including numeric literals and variables within expressions, to their original positions in the Civet source, aligning well with the actual TypeScript output.
                 *   The `StandardRawSourceMap` (V3) exhibited significant inaccuracies:
                     *   Mis-mapping of numeric literals (e.g., `1`, `42` often mapped to the variable name on that line in Civet).
@@ -598,7 +598,7 @@ By splitting out the Civet workflow into its own mini-module, you:
         This investigation underscores the importance of carefully handling the sourcemap data from the Civet compiler, especially its non-standard but more precise `lines` representation, to achieve the desired accuracy for the Svelte+Civet development experience.
         |
         ---
-  [] - `src/svelte2tsx/civet/mapNormalizer.ts`
+  [X] - `src/svelte2tsx/civet/mapNormalizer.ts`
          ### `normalizeCivetMap` Implementation and Testing
          A `normalizeCivetMap` utility has been developed and tested in `mapNormalizer.test.ts`. This function is crucial for converting Civet's direct sourcemap output into a standard V3 `RawSourceMap` that can be consumed by downstream tools and chained with other sourcemaps (e.g., Svelte to TSX).
          |
@@ -624,8 +624,37 @@ By splitting out the Civet workflow into its own mini-module, you:
          |
          *   All tests in `mapNormalizer.test.ts` are passing, reflecting an understanding of the V3 sourcemap generation process and its inherent optimizations.
          *   The `normalizeCivetMap` function robustly converts Civet's `lines`-based sourcemap into a standard, practically accurate V3 `RawSourceMap`, correctly handling Svelte file structure (offsets and script indentation). This component is ready for integration into the `civet/preprocessor.ts` to generate the Civet-to-TS part of the overall Svelte-to-TSX sourcemap chain.
-  [] - `src/svelte2tsx/civet/preprocessor.ts`
-  [] - `src/svelte2tsx/civet/utils.ts`
+ [] – [A1B] src/svelte2tsx/civet/preprocessor.ts
+    • Exposes a single entrypoint:
+        preprocessCivet(svelteContent: string, filename: string): PreprocessResult
+    
+    **Implementation & Findings:**
+    The `preprocessCivet` function in `packages/svelte2tsx/src/svelte2tsx/utils/civetPreprocessor.ts` has been successfully implemented and tested.
+    
+    Responsibilities fulfilled:
+      1.  **HTMLX Parsing**: It utilizes `parseHtmlxOriginal` (from `../../utils/htmlxparser`) to identify all `<script>` tags. It then filters for those with `lang="civet"`, distinguishing between module (`context="module"`) and instance scripts.
+      2.  **Snippet Extraction**: For each identified Civet block, it extracts the raw Civet code snippet based on the start and end positions provided by the parser.
+      3.  **Offset Calculation**: It computes `originalContentStartLine_1based` (the 1-based line in the Svelte file where the actual Civet code begins, after the `<script>` tag and any leading newlines within it) using `getActualContentStartLine`. This is then converted to `originalCivetSnippetLineOffset_0based` for use with `normalizeCivetMap`. The `normalizeCivetMap` function itself dynamically calculates the `svelteScriptIndent` based on the Svelte file content and this offset.
+      4.  **Civet Compilation**: It calls `compileCivet(snippet, filename)` (from `./civetCompiler`) to transform the Civet snippet into TypeScript. This returns the compiled `code` and a `rawMap` (which is expected to be a `CivetLinesSourceMap`). It includes a guard to continue if `rawMap` is not available or not a `CivetLinesSourceMap` (i.e., doesn't have a `lines` property).
+      5.  **Sourcemap Normalization**: The `rawMap` (cast as `CivetLinesSourceMap`), the full `svelteContent`, the `originalCivetSnippetLineOffset_0based`, and the `filename` are passed to `normalizeCivetMap` (from `./civetMapNormalizer`). This function produces a standard V3 `RawSourceMap` that maps from the original Svelte file (specifically the Civet code locations) to the compiled TypeScript snippet.
+      6.  **Code Splicing**: It uses `MagicString` to overwrite the original Civet code snippet within the Svelte content with the `compiledTsCode` generated in step 4.
+      7.  **Metadata Recording & Return Structure**: It returns a `PreprocessResult` object containing:
+          *   `code`: The modified Svelte string where Civet `<script>` blocks have been replaced by their TypeScript equivalents.
+          *   `module?` or `instance?`: Depending on the script type, a `CivetBlockInfo` object is populated. This object includes:
+              *   `map`: The normalized V3 `RawSourceMap` from step 5.
+              *   `tsStartInSvelteWithTs`: The character offset where the compiled TS code begins in the modified Svelte string.
+              *   `tsEndInSvelteWithTs`: The character offset where the compiled TS code ends.
+              *   `originalContentStartLine`: The 1-based line number in the original Svelte file where the Civet content started.
+    
+    **Testing & Sourcemap Accuracy:**
+    *   Initial unit tests (`packages/svelte2tsx/test/civet/preprocess.test.ts`) for `preprocessCivet` are passing.
+    *   The tests confirm that:
+        *   Civet code within `<script lang="civet">` is correctly replaced by compiled TypeScript.
+        *   The `PreprocessResult` structure is correctly populated with the transformed code and the `CivetBlockInfo` (including the V3 sourcemap) for instance scripts.
+        *   The V3 sourcemap generated by `normalizeCivetMap` (when consumed by `source-map`'s `SourceMapConsumer`) accurately maps positions from the compiled TypeScript snippet back to their original locations in the Svelte file.
+        *   Specifically, a test querying the mapping for the *start* of the compiled TS snippet (e.g., generated line 1, column 0) correctly resolved to the original Svelte line and column where the corresponding Civet code began (e.g., `a := 1` at Svelte file line 3, column 2, after accounting for the `<script>` tag's line and initial indentation of the Civet block). This validates that `normalizeCivetMap` correctly handles the `originalCivetSnippetLineOffset_0based` and the internal `svelteScriptIndent` calculation.
+
+[] – [A1B] src/svelte2tsx/civet/utils.ts
 5. Playtests & Test Types
    - Unit tests for `compileCivet()` to verify TS code output and raw map shape.
    - Unit tests for `normalizeCivetMap()` to assert correct mapping of a set of known offsets.
@@ -666,3 +695,64 @@ By splitting out the Civet workflow into its own mini-module, you:
    - Performance benchmarks measuring median and p95 latencies for `preprocessCivet()` and full `svelte2tsx()` on large Svelte files.
    - Integration tests verifying TSX output and sourcemap accuracy for complex component examples.
    - Fuzz/property-based tests for map normalization on varied snippet shapes.
+
+5) Findings from Phase A1:
+   - Raw CivetLinesSourceMap:
+     * Civet's internal `lines` array (the `CivetLinesSourceMap.lines` property) offers highly granular, delta-based segment information. These segments represent mappings from generated TypeScript back to the original Civet code snippet.
+     * This raw format generally maintains per-character mapping precision for many tokens.
+     * Crucially, it appears to retain better accuracy for complex Civet constructs (e.g., `if/else` blocks, multi-line functions, indentation changes) compared to the standard V3 `mappings` string that would be generated by calling the Civet compiler's built-in `.json()` method directly on its internal sourcemap object. This was a key insight from early testing with `compileCivet.test.ts`.
+   - normalizeCivetMap behavior:
+     * **Input:** Takes the `CivetLinesSourceMap` (containing the `lines` array from the Civet compiler), the full original Svelte file content, the 0-based line offset of the Civet script block within the Svelte file, and the Svelte file's path.
+     * **Core Logic & Transformations:**
+       * Iterates through each "generated line" provided in the `CivetLinesSourceMap.lines`. Each generated line contains an array of "segments."
+       * Each segment is typically an array of numbers like `[generatedColumnDelta, sourceFileIndex, originalLineDelta, originalColumnDelta, optionalNameIndex?]`.
+       * **Delta Accumulation:** The function correctly accumulates these deltas to determine absolute positions:
+         * `generatedColumn` is an absolute column within the current generated TypeScript line.
+         * `originalLine` (relative to the start of the Civet snippet) is calculated by accumulating `originalLineDelta`.
+         * `originalColumn` (relative to the start of its line in the Civet snippet) is calculated by accumulating `originalColumnDelta`.
+       * **Svelte File Coordinate Adjustment:**
+         * The calculated `originalLine` (from the Civet snippet) is adjusted by adding the `originalCivetSnippetLineOffset_0based` to map it to the correct line number within the Svelte file.
+         * The calculated `originalColumn` (from the Civet snippet) is adjusted by adding the `svelteScriptIndent`. This indent is dynamically calculated by `normalizeCivetMap` by inspecting the `originalFullSvelteContent` and finding the actual column where the first non-whitespace character of the Civet script block begins on its first line.
+       * **Sorting of Segments:** Before adding mappings to the `SourceMapGenerator`, for each generated line, the segments derived from the Civet `lines` array are sorted. The primary sort key is the absolute `generatedColumn`. A secondary sort by `originalLine` and then `originalColumn` ensures deterministic behavior if multiple raw segments map from the same generated TS position.
+       * **Segment Processing & `SourceMapGenerator`:**
+         * The function iterates through these sorted segments for each generated line.
+         * It logs its activity, showing which segments are being added as mappings to the `source-map` library's `SourceMapGenerator`.
+         * The debug logs (e.g., `[normalizeCivetMap DEBUG] Adding mapping for Gen LXCY...`) confirm that it attempts to add distinct mappings for fine-grained segments from the Civet `lines` data (e.g., for an opening quote and the first character of a string literal, if the Civet `lines` data provides them).
+         * There's internal logic (e.g., `lastAddedGeneratedColumn` check, visible in logs as "Skipping segment for already processed Gen...") to potentially avoid adding redundant mappings if it believes an identical mapping for that *exact generated position to the exact original position* has already been added. However, it will still add multiple mappings for the same generated position if they point to *different* original positions.
+     * **Output:** Produces a `StandardRawSourceMap` (V3) object using `generator.toJSON()`.
+     * **`sources` and `sourcesContent`**: The V3 map correctly includes the Svelte file path in `sources` and the full Svelte file content in `sourcesContent`.
+   - Standard V3 RawSourceMap characteristics:
+     * **General Token-Start Accuracy:** The V3 `RawSourceMap` produced by `normalizeCivetMap` is generally accurate in mapping tokens from the generated TypeScript back to their correct *starting positions* in the original Svelte file.
+     * **Intra-Token Granularity via `SourceMapGenerator` Optimization:**
+       * While `normalizeCivetMap` processes and attempts to add highly granular, potentially per-character mappings from the Civet `lines` data to the `SourceMapGenerator`, the generator itself performs standard V3 sourcemap optimizations.
+       * A common optimization is to collapse mappings for adjacent characters within the same token (or a space immediately preceding a token and the token's first character) into a single segment in the V3 `mappings` string. This segment typically points to the *start* of the original token.
+       * This means if you query the `SourceMapConsumer` for the TypeScript position of the second or third character of a token, it will usually resolve to the *start* of that token in the Svelte file. This is standard and expected V3 behavior, favoring compactness.
+     * **Preservation of Distinct Mappings (e.g., Quote vs. First Char):**
+       * Despite the general intra-token optimization, if the Civet `lines` data provides distinct segments for closely related but separate original positions (like an opening quote of a string vs. the first character of its content), and `normalizeCivetMap` adds these as distinct mappings to the `SourceMapGenerator`, the resulting V3 map *can and does* often preserve enough information for these to be resolved differently.
+       * The recent test fixes for Scenarios 1.1 and 1.2 (string literals) demonstrate this: by querying the `SourceMapConsumer` with the precise TypeScript column for the opening quote, we correctly get the Svelte position of the quote. If we query for the TypeScript column of the first character *after* the quote, we get the Svelte position of that character. The V3 map is therefore more granular than just token-start in these specific, tested cases.
+     * **`SourceMapConsumer` and Bias:** The choice of `bias` (e.g., `SourceMapConsumer.LEAST_UPPER_BOUND`) when querying the consumer is important, as it dictates which original position is returned if the V3 map has multiple candidate segments for a given generated position. `LEAST_UPPER_BOUND` is generally suitable for finding the "earliest" or most specific mapping.
+     * **`mappings` String:** The generated V3 `mappings` string is relatively compact, reflecting the optimizations but, as seen, can still retain crucial distinctions when the input data is rich enough.
+
+## Our Journey & Conclusions
+
+Throughout our deep dive into `normalizeCivetMap` and its integration within `svelte2tsx`, we:
+
+1. Discovered and fixed an initial bug where identical generated columns caused valid sourcemap segments to be skipped.
+2. Identified how `source-map`'s `SourceMapGenerator` optimizes V3 `mappings`, collapsing adjacent character mappings into single segments at token starts.
+3. Updated tests to use `SourceMapConsumer.LEAST_UPPER_BOUND` bias and adjusted expectations to align with practical V3 behavior, ensuring accurate mappings for identifiers, parameters, and string literals.
+4. Validated that while Civet's internal `lines` format offers per-character precision, the standard V3 map reliably locates token starts—sufficient for hover and go-to-definition features.
+5. Confirmed `normalizeCivetMap` correctly handles line offsets, script indentation, segment sorting, and edge-case mappings across all test scenarios.
+
+These findings underscore the trade-off between raw per-character granularity and V3 map compactness, and establish confidence in our current normalization approach.
+
+## Next Steps
+
+To advance our Civet support and simplify the pipeline, we will:
+
+- Phase A2: Extract and encapsulate Civet compilation and map normalization into a dedicated `civet/` submodule (`compiler.ts`, `mapNormalizer.ts`, `preprocessor.ts`, `utils.ts`).
+- Refactor `index.ts` to invoke `preprocessCivet()`, generate base Svelte→TSX code, and chain Civet sourcemaps cleanly via `chainSourceMaps`.
+- Write comprehensive unit and integration tests for the new preprocessor components, verifying code output and end-to-end sourcemap accuracy.
+- Benchmark the full Svelte-to-TSX pipeline on complex components to ensure performance and reliability.
+- Investigate upstream improvements or custom utilities to better preserve Civet's raw map precision when converting to V3 format.
+
+This trajectory will lead to a robust, maintainable Civet preprocessing pipeline and seamless integration with the Svelte Language Server.

@@ -1,66 +1,82 @@
-// import MagicString from 'magic-string';
-// import { parseHtmlx as parseHtmlxOriginal } from '../../utils/htmlxparser';
-// import { parse } from 'svelte/compiler';
-// import { compileCivet } from './civetCompiler';
-// import { normalizeCivetMap } from './civetMapNormalizer';
-// import { getAttributeValue, getActualContentStartLine } from './civetUtils';
-// import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
+import MagicString from 'magic-string';
+import { parseHtmlx as parseHtmlxOriginal } from '../../utils/htmlxparser';
+import { parse } from 'svelte/compiler';
+import { compileCivet } from './civetCompiler';
+import { normalizeCivetMap } from './civetMapNormalizer';
+import { getAttributeValue, getActualContentStartLine } from './civetUtils';
+import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
 
-// /**
-//  * Preprocess a Svelte document, compiling any <script lang="civet"> blocks
-//  * into TypeScript and normalizing their sourcemaps.
-//  */
-// export function preprocessCivet(
-//   svelte: string,
-//   filename: string
-// ): PreprocessResult {
-//   const ms = new MagicString(svelte);
-//   const parserHtmlx = parseHtmlxOriginal(svelte, parse, { emitOnTemplateError: false, svelte5Plus: true });
-//   const tags = parserHtmlx.tags;
-//   const result: PreprocessResult = { code: svelte };
+/**
+ * Preprocess a Svelte document, compiling any <script lang="civet"> blocks
+ * into TypeScript and normalizing their sourcemaps.
+ */
+export function preprocessCivet(svelte: string, filename: string): PreprocessResult {
+  const ms = new MagicString(svelte);
+  const { tags } = parseHtmlxOriginal(svelte, parse, { emitOnTemplateError: false, svelte5Plus: true });
+  const result: PreprocessResult = { code: svelte };
 
-//   // process module and instance Civet scripts
-//   for (const tag of tags) {
-//     if (tag.type !== 'Script') continue;
-//     const lang = getAttributeValue((tag as any).attributes, 'lang');
-//     if (lang !== 'civet') continue;
+  for (const tag of tags) {
+    if (tag.type !== 'Script') continue;
+    const lang = getAttributeValue((tag).attributes, 'lang');
+    if (lang !== 'civet') continue;
 
-//     const context = getAttributeValue((tag as any).attributes, 'context');
-//     const isModule = context === 'module';
+    const context = getAttributeValue((tag).attributes, 'context');
+    const isModule = context === 'module';
 
-//     const start = tag.content.start;
-//     const end = tag.content.end;
-//     const snippet = svelte.slice(start, end);
+    // Change lang="civet" to lang="ts"
+    const langAttributeNode = tag.attributes.find(attr => attr.name === 'lang' && attr.value !== true);
+    if (langAttributeNode && Array.isArray(langAttributeNode.value) && langAttributeNode.value.length > 0) {
+        const langValueNode = langAttributeNode.value[0]; // This is a Text node
+        // langValueNode.start is the offset of the opening quote of the attribute value
+        // langValueNode.end is the offset *after* the closing quote of the attribute value
+        // We overwrite the content within the quotes.
+        ms.overwrite(langValueNode.start + 1, langValueNode.end - 1, 'ts');
+    }
 
-//     // Compile Civet to TS + raw map
-//     const { code: compiledTsCode, rawMap } = compileCivet(snippet, filename);
+    const start = tag.content.start;
+    const end = tag.content.end;
+    const snippet = svelte.slice(start, end);
+
+    // Compile Civet to TS and get raw sourcemap
+    const { code: compiledTsCode, rawMap } = compileCivet(snippet, filename);
     
-//     // Determine the 1-based line where Civet content starts in the original Svelte file.
-//     const originalContentStartLine_1based = getActualContentStartLine(svelte, start);
-//     // Determine the 0-based line offset of the Civet snippet within the original Svelte file.
-//     const originalCivetSnippetLineOffset_0based = originalContentStartLine_1based - 1;
+    if (rawMap && 'lines' in rawMap) {
+      if (isModule && filename === 'ComplexComponent.svelte') { 
+        console.log(`[preprocessCivet DEBUG MODULE - ${filename}] Raw CivetMap Lines:`, JSON.stringify(rawMap.lines));
+      }
+      if (!isModule && filename === 'ComplexComponent.svelte') { 
+        console.log(`[preprocessCivet DEBUG INSTANCE - ${filename}] Raw CivetMap Lines:`, JSON.stringify(rawMap.lines));
+      }
+    }
 
-//     // Normalize the Civet sourcemap.
-//     // Pass the full original Svelte content and the 0-based line offset of the snippet.
-//     const map = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based);
+    // Only proceed if we have a CivetLinesSourceMap (has 'lines')
+    if (!rawMap || !('lines' in rawMap)) continue;
 
-//     // Replace the snippet in the code
-//     ms.overwrite(start, end, compiledTsCode);
+    // Compute line offset for snippet within the Svelte file
+    const originalContentStartLine_1based = getActualContentStartLine(svelte, start);
+    const originalCivetSnippetLineOffset_0based = originalContentStartLine_1based - 1;
 
-//     const tsEndInSvelteWithTs = start + compiledTsCode.length;
-//     const blockData: CivetBlockInfo = {
-//         map,
-//         tsStartInSvelteWithTs: start, 
-//         tsEndInSvelteWithTs,      
-//         originalContentStartLine: originalContentStartLine_1based // Use the 1-based line here
-//     };
-//     if (isModule) {
-//       result.module = blockData;
-//     } else {
-//       result.instance = blockData;
-//     }
-//   }
+    // Normalize the Civet sourcemap to a standard V3 map
+    const map = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
 
-//   result.code = ms.toString();
-//   return result;
-// } 
+    // Replace the Civet snippet with the compiled TS code
+    ms.overwrite(start, end, compiledTsCode);
+
+    const tsEndInSvelteWithTs = start + compiledTsCode.length;
+    const blockData: CivetBlockInfo = {
+      map,
+      tsStartInSvelteWithTs: start,
+      tsEndInSvelteWithTs,
+      originalContentStartLine: originalContentStartLine_1based
+    };
+
+    if (isModule) {
+      result.module = blockData;
+    } else {
+      result.instance = blockData;
+    }
+  }
+
+  result.code = ms.toString();
+  return result;
+} 

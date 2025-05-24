@@ -18,6 +18,7 @@ export function normalizeCivetMap(
   svelteFilePath: string
 ): StandardRawSourceMap {
 
+  const lazerFocusDebug = true
   const generator = new SourceMapGenerator({ file: svelteFilePath });
 
   // Set the source content for the .svelte file.
@@ -48,28 +49,33 @@ export function normalizeCivetMap(
     civetMap.lines.forEach((lineSegments, generatedLine_0based) => {
       if (!lineSegments || lineSegments.length === 0) return;
 
-      // Sort segments: primarily by generated column, then by original line, then by original column.
-      // This ensures that for a given generated position, the segment mapping to the earliest
-      // original position comes first.
-      const sortedSegments = lineSegments.slice().sort((a, b) => {
-        if (a[0] !== b[0]) return a[0] - b[0]; // Generated column
-        // If generated columns are the same, sort by original line then original column, both ASCENDING.
-        // This makes the segment mapping to the EARLIEST original position come first.
-        if (a[2] !== b[2]) return a[2] - b[2]; // Original line (ascending)
-        return a[3] - b[3];                   // Original column (ascending)
+      if (lazerFocusDebug) console.log(`\n[normalizeCivetMap DEBUG] Processing Generated Line: ${generatedLine_0based + 1}`);
+
+      // Convert Civet's delta-based generated column entries to absolute columns
+      let runningGenCol = 0;
+      const segmentsWithGenCol: { genCol: number; segment: number[] }[] = [];
+      for (const seg of lineSegments) {
+        if (!seg || seg.length < 4) continue;
+        runningGenCol += seg[0];
+        segmentsWithGenCol.push({ genCol: runningGenCol, segment: seg });
+      }
+      // Sort by absolute generated column, then original line, then original column
+      const sortedSegments = segmentsWithGenCol.sort((a, b) => {
+        if (a.genCol !== b.genCol) return a.genCol - b.genCol;
+        const sa = a.segment, sb = b.segment;
+        if (sa[2] !== sb[2]) return sa[2] - sb[2];
+        return sa[3] - sb[3];
       });
+      if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] Sorted Segments for Gen Line ${generatedLine_0based + 1}:`, JSON.stringify(sortedSegments));
 
-      let lastAddedGeneratedColumn = -1;
-      sortedSegments.forEach(segment => {
-        if (!segment || segment.length < 4) return; // Ensure segment is valid
-
-        const generatedColumn_0based = segment[0];
-
-        // If this segment refers to the same generated character position as the last one 
-        // we processed (for this generated line), and we have already added a mapping for it, 
-        // skip this one. Due to the sort order, the first one encountered is the one mapping
-        // to the earliest original position, which is what we want.
-        if (generatedColumn_0based === lastAddedGeneratedColumn) {
+      let lastProcessedGeneratedColumn = -1;
+      sortedSegments.forEach(({ genCol: generatedColumn_0based, segment }) => {
+        if (generatedColumn_0based === lastProcessedGeneratedColumn) {
+          // We have already processed a segment for this exact generated column.
+          // Due to our sorting (earliest original position comes first for a given generated column),
+          // we stick with the first one we added for this generated column to ensure determinism
+          // and map to the most primary/earliest source location.
+          if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] Skipping segment for already processed Gen L${generatedLine_0based + 1}C${generatedColumn_0based}:`, JSON.stringify(segment));
           return;
         }
 
@@ -88,6 +94,20 @@ export function normalizeCivetMap(
         // Adjust original column to account for indentation within the Svelte script tag.
         const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet + svelteScriptTagIndent;
 
+        const mappingToAdd = {
+          source: svelteFilePath, // All original positions are from the .svelte file
+          original: {
+            line: finalOriginalLine_1based_in_svelte,
+            column: finalOriginalColumn_0based_in_svelte 
+          },
+          generated: {
+            line: generatedLine_0based + 1, // SourceMapGenerator expects 1-based generated line
+            column: generatedColumn_0based
+          },
+          name: name
+        };
+        if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] Adding mapping for Gen L${generatedLine_0based + 1}C${generatedColumn_0based}:`, JSON.stringify(mappingToAdd));
+        lastProcessedGeneratedColumn = generatedColumn_0based; // Mark this generated column as processed.
         generator.addMapping({
           source: svelteFilePath, // All original positions are from the .svelte file
           original: {
@@ -100,12 +120,12 @@ export function normalizeCivetMap(
           },
           name: name
         });
-        lastAddedGeneratedColumn = generatedColumn_0based; // Record that we've added a mapping for this column.
       });
     });
   }
 
   const outputMap = generator.toJSON(); // This is StandardRawSourceMap
+  if (lazerFocusDebug) console.log('[normalizeCivetMap DEBUG] Final Raw V3 Map from generator.toJSON():', JSON.stringify(outputMap));
 
   // Ensure `sources` and `sourcesContent` are correctly set in the final map.
   // `setSourceContent` and using `svelteFilePath` in `addMapping` should handle this,
