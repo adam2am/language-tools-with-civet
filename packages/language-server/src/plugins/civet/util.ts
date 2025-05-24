@@ -14,12 +14,13 @@ import { Document } from '../../lib/documents';
 import * as ts from 'typescript';
 import { CivetLanguageServiceHost, SourceMapLinesEntry } from '../../typescriptServiceHost';
 import { scriptElementKindToCompletionItemKind } from '../typescript/utils';
-// Import the original remappers with an underscore prefix
+// Import the original remappers and forwardMap from OUR ts-diagnostics
 import {
-  remapPosition as _remapPosition,
-  remapRange as _remapRange,
+  remapPosition,
+  remapRange,
   flattenDiagnosticMessageText,
-  type SourcemapLines as CivetSourcemapLines // Original type from @danielx/civet/ts-diagnostic
+  forwardMap,
+  SourcemapLines as CivetSourcemapLines // Use our consistent type
 } from './ts-diagnostics';
 import { getCivetTagInfo } from './CivetPlugin';
 
@@ -34,72 +35,7 @@ export interface MappingPosition {
     character: number;
 }
 
-/**
- * Forward-map a Civet source position to generated TS position using raw VLQ-decoded sourcemap lines.
- */
-export function forwardMapRaw(
-    sourcemapLines: RawVLQSourcemapLines,
-    position: MappingPosition
-): MappingPosition {
-    const { line: origLine, character: origOffset } = position;
-    let bestLine = -1;
-    let bestOffset = -1;
-    let foundGenLine = -1;
-    let foundGenOffset = -1;
-
-    for (let genLine = 0; genLine < sourcemapLines.length; genLine++) {
-        const segments = sourcemapLines[genLine];
-        let col = 0;
-        for (const mapping of segments) {
-            const delta = mapping[0] || 0;
-            col += delta;
-            if (mapping.length >= 4) {
-                const srcLine = mapping[2];
-                const srcOffset = mapping[3];
-                if (srcLine <= origLine) {
-                    if (
-                        srcLine > bestLine ||
-                        (srcLine === bestLine && srcOffset >= bestOffset)
-                    ) {
-                        bestLine = srcLine;
-                        bestOffset = srcOffset;
-                        foundGenLine = genLine;
-                        foundGenOffset = col;
-                    }
-                }
-            }
-        }
-    }
-
-    if (foundGenLine >= 0) {
-        const genLine = foundGenLine + (origLine - bestLine);
-        const genOffset = foundGenOffset + (origOffset - bestOffset);
-        return { line: genLine, character: genOffset };
-    }
-
-    return position;
-}
-
-// Wrapper for remapPosition that accepts our RawVLQSourcemapLines
-export function remapPosition(
-  position: MappingPosition,
-  sourcemapLines: RawVLQSourcemapLines
-): MappingPosition {
-  // Cast once here to the type expected by the original _remapPosition
-  return _remapPosition(position, sourcemapLines as any);
-}
-
-// Wrapper for remapRange that accepts our RawVLQSourcemapLines
-export function remapRange(
-  range: { start: MappingPosition; end: MappingPosition },
-  sourcemapLines: RawVLQSourcemapLines
-): { start: MappingPosition; end: MappingPosition } {
-  // Cast once here to the type expected by the original _remapRange
-  return _remapRange(range, sourcemapLines as any);
-}
-
-// Re-export flattenDiagnosticMessageText as is
-export { flattenDiagnosticMessageText };
+// Re-export flattenDiagnosticMessageText as is - this is already imported, so no need to re-export
 
 /**
  * Transforms the Civet compiler's sourcemap line structure (decoded VLQ segments per line)
@@ -203,7 +139,7 @@ export async function convertCompletions(
     contentPos = { line: Math.max(0, contentPos.line - originalContentLineOffset), character: contentPos.character };
   }
   // 2. Forward map to generated TS
-  const tsPos = forwardMapRaw(rawSourcemapLines, contentPos);
+  const tsPos = forwardMap(rawSourcemapLines as CivetSourcemapLines, contentPos);
   // 3. Query TS completions
   const options: ts.GetCompletionsAtPositionOptions = {
     triggerCharacter: completionContext?.triggerCharacter as ts.CompletionsTriggerCharacter,
@@ -233,8 +169,8 @@ export async function convertCompletions(
       const end = offsetToPositionInTs(entry.replacementSpan.start + entry.replacementSpan.length);
       const adjStart = adjustTsPositionForLeadingNewline(start, hostCode);
       const adjEnd = adjustTsPositionForLeadingNewline(end, hostCode);
-      const remapStart = remapPosition(adjStart, rawSourcemapLines);
-      const remapEnd = remapPosition(adjEnd, rawSourcemapLines);
+      const remapStart = remapPosition(adjStart, rawSourcemapLines as CivetSourcemapLines);
+      const remapEnd = remapPosition(adjEnd, rawSourcemapLines as CivetSourcemapLines);
       const effectiveStartPos = originalContentLineOffset > 0
         ? { line: scriptStartPosition.line + originalContentLineOffset, character: (remapStart.line === 0 && scriptStartPosition.line + originalContentLineOffset === scriptStartPosition.line) ? scriptStartPosition.character : 0 }
         : scriptStartPosition;
@@ -273,7 +209,7 @@ export function convertHover(
     contentPos = { line: Math.max(0, contentPos.line - originalContentLineOffset), character: contentPos.character };
   }
   // 2. Forward map to TS
-  const tsPos = forwardMapRaw(rawSourcemapLines, contentPos);
+  const tsPos = forwardMap(rawSourcemapLines as CivetSourcemapLines, contentPos);
   // 3. Get quickInfo
   const info = host.getQuickInfo(document.uri, tsPos);
   if (!info) return null;
@@ -290,8 +226,8 @@ export function convertHover(
   };
   const start = adjustTsPositionForLeadingNewline(offsetToPos(info.textSpan.start), compiledTsCode);
   const end = adjustTsPositionForLeadingNewline(offsetToPos(info.textSpan.start + info.textSpan.length), compiledTsCode);
-  const remappedStart = remapPosition(start, rawSourcemapLines);
-  const remappedEnd = remapPosition(end, rawSourcemapLines);
+  const remappedStart = remapPosition(start, rawSourcemapLines as CivetSourcemapLines);
+  const remappedEnd = remapPosition(end, rawSourcemapLines as CivetSourcemapLines);
   const effectiveStart = originalContentLineOffset > 0
     ? { line: scriptStartPosition.line + originalContentLineOffset, character: scriptStartPosition.character }
     : scriptStartPosition;
@@ -336,7 +272,7 @@ export function convertDiagnostics(
     };
     const tsStart = adjustTsPositionForLeadingNewline(offsetToPos(diag.start), compiledTsCode);
     const tsEnd = adjustTsPositionForLeadingNewline(offsetToPos(diag.start + diag.length), compiledTsCode);
-    const remapped = remapRange({ start: tsStart, end: tsEnd }, rawSourcemapLines);
+    const remapped = remapRange({ start: tsStart, end: tsEnd }, rawSourcemapLines as CivetSourcemapLines);
     const effectiveStart = originalContentLineOffset > 0
       ? { line: scriptStartPosition.line + originalContentLineOffset, character: scriptStartPosition.character }
       : scriptStartPosition;
@@ -376,7 +312,7 @@ export function convertDefinitions(
   // Create a separate variable for accessing script content, NOT adjusted by originalContentLineOffset
   const contentPosForScriptAccess = { line: contentPosForSourcemap.line, character: contentPosForSourcemap.character };
   if (lazerDebug) {
-    console.log('[LAZERDEBUG] contentPosForScriptAccess (for script string access):', contentPosForScriptAccess);
+    console.log('[LAZERDEBUG] contentPosForScriptAccess (for script string access): motivic contentPosForScriptAccess');
   }
 
   if (originalContentLineOffset > 0) {
@@ -386,14 +322,14 @@ export function convertDefinitions(
     }
   }
   // 2. Forward map to TS using the sourcemap-adjusted position
-  const tsPos = forwardMapRaw(rawSourcemapLines, contentPosForSourcemap);
+  const tsPos = forwardMap(rawSourcemapLines as CivetSourcemapLines, contentPosForSourcemap);
   if (lazerDebug) {
-    console.log('[LAZERDEBUG] tsPos from forwardMapRaw:', tsPos);
+    console.log('[LAZERDEBUG] tsPos from forwardMap:', tsPos);
   }
   // 3. Query TS definitions
   const tsDefs = host.getDefinitions(document.uri, tsPos) ?? [];
   if (lazerDebug) {
-    console.log('[LAZERDEBUG] tsDefs returned:', tsDefs);
+    console.log('[LAZERDEBUG] tsDefs returned by host.getDefinitions:', JSON.stringify(tsDefs, null, 2));
   }
 
   const hostCode = host.getScriptInfo(document.uri)?.code || compiledTsCode;
@@ -405,37 +341,20 @@ export function convertDefinitions(
     return { line, character: char };
   };
   const result: DefinitionLink[] = [];
-  let tsReturnedCorrectDefinition = false;
+  // let tsReturnedCorrectDefinition = false; // This check will be simplified or removed
+
   for (const tsDef of tsDefs) {
     if (lazerDebug) {
-      console.log('[LAZERDEBUG] processing tsDef:', tsDef);
+      console.log('[LAZERDEBUG] processing tsDef:', JSON.stringify(tsDef, null, 2));
     }
-    if (!tsDef.textSpan) continue;
-
-    // Try to get the property name from the original script content at the cursor
-    // This is to compare with tsDef.name later
-    let identifierAtCursor = '';
-    const tempTagInfo = getCivetTagInfo(document);
-    const tempScriptContent = tempTagInfo?.content || '';
-    if (tempScriptContent) {
-        const tempScriptLines = tempScriptContent.split('\n');
-        const lineForCursorCheck = tempScriptLines[contentPosForScriptAccess.line];
-        if (lineForCursorCheck) {
-            const textAfterCursorInLine = lineForCursorCheck.substring(contentPosForScriptAccess.character);
-            const match = textAfterCursorInLine.match(/^(\w+)/);
-            if (match) {
-                identifierAtCursor = match[1];
-            }
-        }
-    }
-    if (lazerDebug) {
-        console.log('[LAZERDEBUG] Identifier at cursor (for comparison with tsDef.name):', identifierAtCursor);
-        console.log('[LAZERDEBUG] tsDef.name:', tsDef.name);
+    if (!tsDef.textSpan) {
+        if (lazerDebug) console.log('[LAZERDEBUG] Skipping tsDef due to missing textSpan');
+        continue;
     }
 
-    if (identifierAtCursor && tsDef.name === identifierAtCursor) {
-        tsReturnedCorrectDefinition = true;
-    }
+    // With improved sourcemaps, we trust TS service more.
+    // The direct check for identifierAtCursor against tsDef.name might be too restrictive
+    // if the sourcemaps are accurate, TS should give the correct span.
 
     const startOff = tsDef.textSpan.start;
     const len = tsDef.textSpan.length;
@@ -444,8 +363,8 @@ export function convertDefinitions(
     if (lazerDebug) {
       console.log('[LAZERDEBUG] startPos in TS:', startPos, 'endPos in TS:', endPos);
     }
-    let remapStart = remapPosition(startPos, rawSourcemapLines);
-    let remapEnd = remapPosition(endPos, rawSourcemapLines);
+    let remapStart = remapPosition(startPos, rawSourcemapLines as CivetSourcemapLines);
+    let remapEnd = remapPosition(endPos, rawSourcemapLines as CivetSourcemapLines);
     if (lazerDebug) {
       console.log('[LAZERDEBUG] remapped to Civet content positions:', remapStart, remapEnd);
     }
@@ -462,82 +381,94 @@ export function convertDefinitions(
       console.log('[LAZERDEBUG] final targetStart/End:', targetStart, targetEnd);
     }
     const targetRange = Range.create(targetStart, targetEnd);
-    const originRange = Range.create(position, { line: position.line, character: position.character + 1 });
+    // originSelectionRange should ideally reflect the identifier at the cursor in the Svelte doc
+    // For now, a single character range as before, but could be refined if needed.
+    const originRange = Range.create(position, { line: position.line, character: position.character + 1 }); 
+
     result.push({
-      originSelectionRange: originRange,
-      targetUri: tsDef.fileName,
+      originSelectionRange: originRange, // Consider refining this if TS provides a specific origin span
+      targetUri: tsDef.fileName, // Should be document.uri for in-file definitions
       targetRange,
-      targetSelectionRange: targetRange
+      targetSelectionRange: targetRange // Assuming the whole targetRange is the selection
     });
   }
-  // Manual fallback: if TS definitions are empty OR TS didn't return a definition for the specific identifier at the cursor
-  if (tsDefs.length === 0 || !tsReturnedCorrectDefinition) {
+
+  // Manual fallback: ONLY if TS definitions are empty.
+  if (result.length === 0) { // Changed from (tsDefs.length === 0 || !tsReturnedCorrectDefinition)
     if (lazerDebug) {
-        if (tsDefs.length === 0) {
-            console.log('[LAZERDEBUG] No TS definitions, applying manual fallback.');
-        } else if (!tsReturnedCorrectDefinition) {
-            console.log('[LAZERDEBUG] TS definitions found, but not for the identifier at cursor. Applying manual fallback.');
-        }
+        console.log('[LAZERDEBUG] No TS definitions found by primary logic, applying emergency manual fallback.');
     }
     
     let determinedPropertyName = '';
-    // Use Civet script content and contentPosForScriptAccess to identify the property name under the cursor
     const tagInfo = getCivetTagInfo(document);
     const scriptContent = tagInfo?.content || '';
-    if (lazerDebug) {
-      console.log('[LAZERDEBUG] full scriptContent from tagInfo before split (length):', scriptContent.length, 'snippet:', scriptContent.substr(0,300).replace(/\n/g,'\\n'));
-      console.log('[LAZERDEBUG] scriptTagInfo.content (snippet):', scriptContent.substr(0,200).replace(/\n/g,'\\n'), '...');
-      const scriptLines = scriptContent.split('\n');
-      console.log('[LAZERDEBUG] scriptLines count:', scriptLines.length);
-      console.log('[LAZERDEBUG] contentPosForScriptAccess (Civet script coords):', contentPosForScriptAccess);
-      console.log('[LAZERDEBUG] scriptLines[contentPosForScriptAccess.line]:', scriptLines[contentPosForScriptAccess.line]);
-      const scriptLineText = scriptLines[contentPosForScriptAccess.line] || '';
-      console.log('[LAZERDEBUG] scriptLineText:', scriptLineText);
-      const textAfterCursor = scriptLineText.substring(contentPosForScriptAccess.character);
-      console.log('[LAZERDEBUG] textAfterCursor in script:', textAfterCursor);
-      const usageMatch = textAfterCursor.match(/^(\w+)/);
-      if (usageMatch) {
-        determinedPropertyName = usageMatch[1];
-        console.log('[LAZERDEBUG] Fallback: property name from script usage:', determinedPropertyName);
-      }
+    if (scriptContent) { // Ensure scriptContent is not empty before processing
+        if (lazerDebug) {
+          console.log('[LAZERDEBUG] Fallback: full scriptContent (length):', scriptContent.length, 'snippet:', scriptContent.substr(0,300).replace(/\n/g,'\\n'));
+          console.log('[LAZERDEBUG] Fallback: contentPosForScriptAccess (Civet script coords):', contentPosForScriptAccess);
+        }
+        const scriptLines = scriptContent.split('\n');
+        if (contentPosForScriptAccess.line < scriptLines.length) { // Boundary check
+            const scriptLineText = scriptLines[contentPosForScriptAccess.line] || '';
+            if (lazerDebug) console.log('[LAZERDEBUG] Fallback: scriptLineText:', scriptLineText);
+            // Try to extract a valid JS identifier starting at the cursor
+            const textAfterCursor = scriptLineText.substring(contentPosForScriptAccess.character);
+            if (lazerDebug) console.log('[LAZERDEBUG] Fallback: textAfterCursor in script:', textAfterCursor);
+            const usageMatch = textAfterCursor.match(/^([a-zA-Z_]\w*)/); // More robust identifier regex
+            if (usageMatch) {
+              determinedPropertyName = usageMatch[1];
+              if (lazerDebug) console.log('[LAZERDEBUG] Fallback: property name from script usage:', determinedPropertyName);
+            }
+        } else if (lazerDebug) {
+            console.log('[LAZERDEBUG] Fallback: contentPosForScriptAccess.line is out of bounds for scriptLines.');
+        }
     }
-    // If still undetermined, fall back to the first property definition in compiled TS
-    if (!determinedPropertyName) {
+
+    // If still undetermined after script parsing, try the compiled TS regex as a last resort
+    if (!determinedPropertyName && compiledTsCode) { // Ensure compiledTsCode is not empty
       const firstPropDefMatch = compiledTsCode.match(/\b(\w+)\b(?=\s*:)/);
       if (firstPropDefMatch) {
         determinedPropertyName = firstPropDefMatch[1];
-        if (lazerDebug) console.log('[LAZERDEBUG] Fallback: property name from TS definition:', determinedPropertyName);
+        if (lazerDebug) console.log('[LAZERDEBUG] Fallback: property name from first TS definition regex:', determinedPropertyName);
       }
     }
 
     if (determinedPropertyName) {
-      // Search for the definition in the compiled TS: `propertyName:`
-      const searchRegex = new RegExp(`\\b${determinedPropertyName}\\b(?=\\s*:)`);
-      if (lazerDebug) console.log('[LAZERDEBUG] searchRegex:', searchRegex);
+      const searchRegex = new RegExp(`\b${determinedPropertyName}\b(?=\s*:)`);
+      if (lazerDebug) console.log('[LAZERDEBUG] Fallback: searchRegex for definition:', searchRegex);
       const idx = compiledTsCode.search(searchRegex);
-      if (lazerDebug) console.log('[LAZERDEBUG] matched at idx:', idx);
+      if (lazerDebug) console.log('[LAZERDEBUG] Fallback: matched definition at idx:', idx);
       if (lazerDebug && idx !== -1) {
-        console.log('[LAZERDEBUG] compiledTsCode around match:', compiledTsCode.substr(Math.max(0, idx-20), determinedPropertyName.length+40).replace(/\n/g,'\\n'));
+        console.log('[LAZERDEBUG] Fallback: compiledTsCode around match:', compiledTsCode.substr(Math.max(0, idx-20), determinedPropertyName.length+40).replace(/\n/g,'\\n'));
       }
       if (idx !== -1) {
         const len = determinedPropertyName.length;
         const startTsPos = adjustTsPositionForLeadingNewline(offsetToPos(idx), hostCode);
         const endTsPos = adjustTsPositionForLeadingNewline(offsetToPos(idx + len), hostCode);
-        if (lazerDebug) console.log('[LAZERDEBUG] fallback startTsPos/endTsPos:', startTsPos, endTsPos);
-        let remapStart = remapPosition(startTsPos, rawSourcemapLines);
-        let remapEnd = remapPosition(endTsPos, rawSourcemapLines);
+        if (lazerDebug) console.log('[LAZERDEBUG] Fallback: startTsPos/endTsPos:', startTsPos, endTsPos);
+        let remapStart = remapPosition(startTsPos, rawSourcemapLines as CivetSourcemapLines);
+        let remapEnd = remapPosition(endTsPos, rawSourcemapLines as CivetSourcemapLines);
         if (originalContentLineOffset > 0) {
           remapStart = { line: remapStart.line + originalContentLineOffset, character: remapStart.character };
           remapEnd = { line: remapEnd.line + originalContentLineOffset, character: remapEnd.character };
         }
         const targetStart = civetContentPositionToSvelteDocRelative(remapStart, scriptStartPosition);
         const targetEnd = civetContentPositionToSvelteDocRelative(remapEnd, scriptStartPosition);
-        if (lazerDebug) console.log('[LAZERDEBUG] fallback targetStart/End:', targetStart, targetEnd);
+        if (lazerDebug) console.log('[LAZERDEBUG] Fallback: final targetStart/End:', targetStart, targetEnd);
         const originRange = Range.create(position, { line: position.line, character: position.character + 1 });
-        result.push({ originSelectionRange: originRange, targetUri: document.uri, targetRange: Range.create(targetStart, targetEnd), targetSelectionRange: Range.create(targetStart, targetEnd) });
+        result.push({ 
+            originSelectionRange: originRange, 
+            targetUri: document.uri, // Fallback definition is in the same document
+            targetRange: Range.create(targetStart, targetEnd), 
+            targetSelectionRange: Range.create(targetStart, targetEnd) 
+        });
       }
-      return result;
+    } else if (lazerDebug) {
+        console.log('[LAZERDEBUG] Fallback: Could not determine property name for fallback logic.');
     }
+  }
+  if (lazerDebug) {
+    console.log('[LAZERDEBUG] convertDefinitions returning results:', JSON.stringify(result, null, 2));
   }
   return result;
 }

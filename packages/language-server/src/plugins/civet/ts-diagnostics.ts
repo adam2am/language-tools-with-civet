@@ -88,6 +88,50 @@ export function remapRange(
   };
 }
 
+// Add official forwardMap for source→generated mapping
+export function forwardMap(
+  sourcemapLines: SourcemapLines,
+  position: Position
+): Position {
+  const origLine = position.line;
+  const origOffset = position.character;
+  let col = 0;
+  let bestLine = -1;
+  let bestOffset = -1;
+  let foundLine = -1;
+  let foundOffset = -1;
+
+  sourcemapLines.forEach((lineArr, genLine) => {
+    col = 0;
+    lineArr.forEach(mapping => {
+      col += mapping[0] || 0;
+      if (mapping.length === 4) {
+        const srcLine = mapping[2] as number;
+        const srcOffset = mapping[3] as number;
+        if (srcLine <= origLine) {
+          if (
+            (srcLine > bestLine && srcOffset <= origOffset) ||
+            (srcLine === bestLine && srcOffset <= origOffset && srcOffset >= bestOffset)
+          ) {
+            bestLine = srcLine;
+            bestOffset = srcOffset;
+            foundLine = genLine;
+            foundOffset = col;
+          }
+        }
+      }
+    });
+  });
+
+  if (foundLine >= 0) {
+    return {
+      line: foundLine + origLine - bestLine,
+      character: foundOffset + origOffset - bestOffset,
+    };
+  }
+  return position;
+}
+
 export function flattenDiagnosticMessageText(
   diag: string | DiagnosticMessageChain | undefined,
   indent = 0
