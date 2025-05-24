@@ -11,7 +11,11 @@
     console.log "You are a minor"
   
   // Array example
-  fruits := ["apple", "banana", "orange", "grape", "mango"]
+  fruits := ["apple",
+   "banana", 
+   "orange", 
+   "grape", 
+   "mango"]
   
   // Loop example
   for fruit, index of fruits
@@ -26,6 +30,17 @@
   
   // Reduce example
   sum := numbers.reduce ((acc, num) => acc + num), 0  
+
+  // Nested function example
+  nestedFunction := () =>
+    do 
+      do
+        do 
+          nestedVar := 123
+          console.log "Nested function called"
+  
+  // Call nested function
+  nestedFunction()
 </script>
 
 <p>{sum}</p>

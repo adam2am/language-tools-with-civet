@@ -18,7 +18,7 @@ export function normalizeCivetMap(
   svelteFilePath: string
 ): StandardRawSourceMap {
 
-  const lazerFocusDebug = true;
+  const lazerFocusDebug = false;
   const generator = new SourceMapGenerator({ file: svelteFilePath });
 
   // Set the source content for the .svelte file.
