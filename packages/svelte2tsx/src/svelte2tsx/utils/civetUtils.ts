@@ -48,3 +48,45 @@ export function getActualContentStartLine(
   const { line } = getLineAndColumnForOffset(str, idx < str.length ? idx : offset);
   return line;
 } 
+
+/**
+ * Given a full content string and a snippet string, compute the 0-based line index
+ * where the first non-empty line of the snippet appears in the full content.
+ */
+export function getSnippetOffset(
+  full: string,
+  snippet: string
+): number {
+  const fullLines = full.split('\n');
+  const snippetLines = snippet.split('\n').filter(l => l.trim() !== '');
+  if (snippetLines.length === 0) return 0;
+  const firstLine = snippetLines[0].trim();
+  const idx = fullLines.findIndex(line => line.trim() === firstLine);
+  return idx >= 0 ? idx : 0;
+} 
+
+/**
+ * Strip the common leading whitespace from all non-empty lines of the snippet.
+ * Returns the dedented string and the indent that was removed.
+ */
+export function stripCommonIndent(snippet: string): { dedented: string; indent: string } {
+  const lines = snippet.split('\n');
+  let minIndent = Infinity;
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const match = line.match(/^(\s*)/);
+    if (match) {
+      minIndent = Math.min(minIndent, match[1].length);
+    }
+  }
+  if (!isFinite(minIndent) || minIndent === 0) {
+    return { dedented: snippet, indent: '' };
+  }
+  // Determine the indent string (spaces or tabs)
+  const firstNonEmpty = lines.find(line => line.trim() !== '');
+  const indent = firstNonEmpty ? firstNonEmpty.slice(0, minIndent) : '';
+  const dedentedLines = lines.map(line =>
+    line.startsWith(indent) ? line.slice(indent.length) : line
+  );
+  return { dedented: dedentedLines.join('\n'), indent };
+} 

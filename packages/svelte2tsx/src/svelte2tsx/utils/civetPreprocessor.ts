@@ -3,8 +3,10 @@ import { parseHtmlx as parseHtmlxOriginal } from '../../utils/htmlxparser';
 import { parse } from 'svelte/compiler';
 import { compileCivet } from './civetCompiler';
 import { normalizeCivetMap } from './civetMapNormalizer';
-import { getAttributeValue, getActualContentStartLine } from './civetUtils';
+import { getAttributeValue, getActualContentStartLine, stripCommonIndent } from './civetUtils';
 import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
+
+const civetPreprocessorDebug = true;
 
 /**
  * Preprocess a Svelte document, compiling any <script lang="civet"> blocks
@@ -36,30 +38,37 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
     const start = tag.content.start;
     const end = tag.content.end;
     const snippet = svelte.slice(start, end);
-
-    // Compile Civet to TS and get raw sourcemap
-    const { code: compiledTsCode, rawMap } = compileCivet(snippet, filename);
-    
-    if (rawMap && 'lines' in rawMap) {
-      if (isModule && filename === 'ComplexComponent.svelte') { 
-        console.log(`[preprocessCivet DEBUG MODULE - ${filename}] Raw CivetMap Lines:`, JSON.stringify(rawMap.lines));
-      }
-      if (!isModule && filename === 'ComplexComponent.svelte') { 
-        console.log(`[preprocessCivet DEBUG INSTANCE - ${filename}] Raw CivetMap Lines:`, JSON.stringify(rawMap.lines));
-      }
+    if (civetPreprocessorDebug) {
+      console.log(`[preprocessCivet] Detected <script lang=\"civet\"> (${isModule ? 'module' : 'instance'}) at offsets ${start}-${end}`);
+      console.log(`[preprocessCivet] Original snippet content:\n${snippet}`);
     }
 
-    // Only proceed if we have a CivetLinesSourceMap (has 'lines')
+    // Dedent the snippet to strip common leading whitespace for accurate mapping
+    const { dedented: dedentedSnippet } = stripCommonIndent(snippet);
+    if (civetPreprocessorDebug) console.log(`[preprocessCivet] Dedented snippet content:\n${dedentedSnippet}`);
+    
+
+    // Compile Civet to TS and get raw sourcemap from dedented snippet
+    const { code: compiledTsCode, rawMap } = compileCivet(dedentedSnippet, filename);
+    if (civetPreprocessorDebug) console.log(`[preprocessCivet] compileCivet output code length: ${compiledTsCode.length}, rawMap lines count: ${rawMap && 'lines' in rawMap ? rawMap.lines.length : 0}`);
+
     if (!rawMap || !('lines' in rawMap)) continue;
 
-    // Compute line offset for snippet within the Svelte file
+    // Debug raw Civet map lines for scenario.svelte to inspect the lines mapping
+    if (!isModule && filename === 'scenario.svelte') {
+      console.log(`[preprocessCivet DEBUG] Raw CivetMap Lines for ${filename}:`, JSON.stringify(rawMap.lines));
+    }
+
+    // Compute line offset for snippet within the Svelte file dynamically by finding first content line
     const originalContentStartLine_1based = getActualContentStartLine(svelte, start);
     const originalCivetSnippetLineOffset_0based = originalContentStartLine_1based - 1;
+    if (civetPreprocessorDebug) console.log(`[preprocessCivet] originalContentStartLine_1based: ${originalContentStartLine_1based}, snippet offset (0-based): ${originalCivetSnippetLineOffset_0based}`);
 
     // Normalize the Civet sourcemap to a standard V3 map
     const map = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
+    if (civetPreprocessorDebug) console.log(`[preprocessCivet] normalizeCivetMap returned map mappings length: ${map.mappings.split(';').length}`);
 
-    // Replace the Civet snippet with the compiled TS code
+    // Replace the Civet snippet with the compiled TS code (dedented)
     ms.overwrite(start, end, compiledTsCode);
 
     const tsEndInSvelteWithTs = start + compiledTsCode.length;

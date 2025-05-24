@@ -67,20 +67,20 @@ describe('normalizeCivetMap (dynamic scenarios)', () => {
       const offset = getSnippetOffset(svelteContent, civetSnippet);
 
       // 3. Normalize the Civet map
-      const normalized = normalizeCivetMap(
+    const normalized = normalizeCivetMap(
         result.rawMap as CivetLinesSourceMap,
         svelteContent,
-        offset,
+      offset,
         'test.svelte'
-      );
+    );
 
       // 4. Verify the RawSourceMap structure
-      assert.equal(normalized.version, 3);
+    assert.equal(normalized.version, 3);
       assert.deepStrictEqual(normalized.sources, ['test.svelte']);
       assert.deepStrictEqual(normalized.sourcesContent, [svelteContent]);
 
       // 5. Map tokens back using SourceMapConsumer
-      const consumer = await new SourceMapConsumer(normalized);
+    const consumer = await new SourceMapConsumer(normalized);
       const tsLines = result.code.split('\n');
       for (const token of tokens) {
         const tsLineIndex = tsLines.findIndex(line => line.includes(token));
@@ -95,8 +95,8 @@ describe('normalizeCivetMap (dynamic scenarios)', () => {
         assert.ok(typeof orig.line === 'number' && orig.line >= 1, `Invalid original line for token "${token}": ${orig.line}`);
         assert.ok(typeof orig.column === 'number' && orig.column >= 0, `Invalid original column for token "${token}": ${orig.column}`);
       }
-      consumer.destroy();
-    });
+    consumer.destroy();
+  });
   }
 });
 

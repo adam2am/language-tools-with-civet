@@ -39,9 +39,9 @@ export function chainSourceMaps(
 ): EncodedSourceMap {
     const civetTraceMap = civetMap instanceof TraceMap ? civetMap : new TraceMap(civetMap);
 
-    // console.log('[chainSourceMaps] Civet Instance Map JSON:', JSON.stringify(civetMap, null, 2));
-    // console.log('[chainSourceMaps] civetTraceMap sources:', civetTraceMap.sources);
-    // console.log('[chainSourceMaps] civetTraceMap resolvedSources:', civetTraceMap.resolvedSources);
+    console.log('[chainSourceMaps] Civet Instance Map JSON:', JSON.stringify(civetMap, null, 2));
+    console.log('[chainSourceMaps] civetTraceMap sources:', civetTraceMap.sources);
+    console.log('[chainSourceMaps] civetTraceMap resolvedSources:', civetTraceMap.resolvedSources);
 
     const chainedMap: EncodedSourceMap = {
         version: 3,
