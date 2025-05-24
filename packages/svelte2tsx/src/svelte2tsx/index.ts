@@ -11,6 +11,8 @@ import { createModuleAst, ModuleAst, processModuleScriptTag } from './processMod
 import path from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
+import { preprocessCivet } from './utils/civetPreprocessor';
+import { chainSourceMaps } from './utils/civetMapChainer';
 
 function processSvelteTemplate(
     str: MagicString,
@@ -46,7 +48,11 @@ export function svelte2tsx(
     options.mode = options.mode || 'ts';
     options.version = options.version || VERSION;
 
-    const str = new MagicString(svelte);
+    // Civet preprocessor integration: transforms only if `<script lang="civet">` blocks are present and Civet is installed
+    const filename = options.filename!;
+    const { code: svelteWithTs, module: civetModuleInfo, instance: civetInstanceInfo } = preprocessCivet(svelte, filename);
+
+    const str = new MagicString(svelteWithTs);
     const basename = path.basename(options.filename || '');
     const svelte5Plus = Number(options.version![0]) > 4;
     const isTsFile = options?.isTsFile;
@@ -242,9 +248,29 @@ export function svelte2tsx(
         };
     } else {
         str.prepend('///<reference types="svelte" />\n');
+        // Generate the base Svelte→TSX map
+        const baseMap = str.generateMap({ hires: true, source: options?.filename });
+        // Chain in Civet maps only if present
+        let finalMap = baseMap;
+        if (civetModuleInfo) {
+            finalMap = chainSourceMaps(
+                finalMap,
+                civetModuleInfo.map,
+                civetModuleInfo.tsStartInSvelteWithTs,
+                civetModuleInfo.tsEndInSvelteWithTs
+            );
+        }
+        if (civetInstanceInfo) {
+            finalMap = chainSourceMaps(
+                finalMap,
+                civetInstanceInfo.map,
+                civetInstanceInfo.tsStartInSvelteWithTs,
+                civetInstanceInfo.tsEndInSvelteWithTs
+            );
+        }
         return {
             code: str.toString(),
-            map: str.generateMap({ hires: true, source: options?.filename }),
+            map: finalMap,
             exportedNames: exportedNames.getExportsMap(),
             events: events.createAPI(),
             // not part of the public API so people don't start using it
