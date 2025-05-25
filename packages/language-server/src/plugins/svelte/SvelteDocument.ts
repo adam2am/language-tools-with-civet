@@ -105,23 +105,10 @@ export interface ITranspiledSvelteDocument extends PositionMapper {
 export class TranspiledSvelteDocument implements ITranspiledSvelteDocument {
     static async create(document: Document, config: SvelteConfig | undefined) {
         if (!config?.preprocess) {
-            console.log('SvelteDocument: No preprocessors found in SvelteConfig for:', document.getFilePath());
             return new TranspiledSvelteDocument(document.getText());
         }
 
         const filename = document.getFilePath() || '';
-        console.log('SvelteDocument: Attempting to preprocess Svelte file:', filename);
-        try {
-            console.log('SvelteDocument: Using SvelteConfig preprocessors:', JSON.stringify(config?.preprocess, (key, value) => {
-                if (typeof value === 'function') {
-                    return `[Function: ${value.name || 'anonymous'}]`;
-                }
-                return value;
-            }, 2));
-        } catch (e) {
-            console.log('SvelteDocument: Error stringifying preprocessor config:', e);
-        }
-
         const preprocessed = await document.compiler.preprocess(
             document.getText(),
             wrapPreprocessors(config?.preprocess),
@@ -129,12 +116,6 @@ export class TranspiledSvelteDocument implements ITranspiledSvelteDocument {
                 filename
             }
         );
-
-        console.log('SvelteDocument: Preprocessing finished for:', filename);
-        console.log('SvelteDocument: Original code length:', document.getText().length);
-        console.log('SvelteDocument: Preprocessed code length:', preprocessed.code.length);
-        const sampleLength = Math.min(preprocessed.code.length, 500);
-        console.log('SvelteDocument: Preprocessed code sample (first ' + sampleLength + ' chars):\n' + preprocessed.code.substring(0, sampleLength));
 
         if (preprocessed.code === document.getText()) {
             return new TranspiledSvelteDocument(document.getText());
@@ -383,41 +364,15 @@ export class SvelteFragmentMapper implements PositionMapper {
  * Wrap preprocessors and rethrow on errors with more info on where the error came from.
  */
 function wrapPreprocessors(preprocessors: PreprocessorGroup | PreprocessorGroup[] = []) {
-    // Log the configured preprocessors for debugging
-    const names = Array.isArray(preprocessors)
-        ? preprocessors.map(p => p.name || 'unknown').join(', ')
-        : (preprocessors.name || 'unknown');
-    console.log(`[SvelteDocument] wrapPreprocessors: wrapping preprocessors: ${names}`);
     preprocessors = Array.isArray(preprocessors) ? preprocessors : [preprocessors];
     return preprocessors.map((preprocessor: any) => {
         const wrappedPreprocessor: PreprocessorGroup = { markup: preprocessor.markup };
 
         if (preprocessor.script) {
             wrappedPreprocessor.script = async (args: any) => {
-                console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') called. File: ${args.filename}, Lang: ${args.attributes.lang}, Attrs: ${JSON.stringify(args.attributes)}`);
                 try {
-                    const result = await preprocessor.script!(args);
-                    // Log the ENTIRE result object from the preprocessor for detailed inspection
-                    try {
-                        console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') RAW RESULT object:`, JSON.stringify(result, (key, value) => {
-                            if (typeof value === 'string' && value.length > 200) { // Truncate long strings in raw result
-                                return value.substring(0, 200) + '...';
-                            }
-                            return value;
-                        }, 2));
-                    } catch (e) {
-                        console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') RAW RESULT object could not be stringified:`, result);
-                    }
-
-                    // Log the result, especially the new code and if lang attribute is present/changed in attributes
-                    // Svelte preprocessors modify content and can return new attributes, though lang update is often implicit by Svelte itself.
-                    console.log(`SvelteDocument.wrapPreprocessors: Script preprocessor ('${preprocessor.name || 'unknown'}') finished. Input lang: ${args.attributes.lang}. Output code sample (first 100 chars): ${result?.code?.substring(0, 100)}`);
-                    if (result && result.attributes && result.attributes.lang) {
-                        console.log(`SvelteDocument.wrapPreprocessors: Preprocessor explicitly returned new lang: ${result.attributes.lang}`);
-                    }
-                    return result;
+                    return await preprocessor.script!(args);
                 } catch (e: any) {
-                    console.error(`SvelteDocument.wrapPreprocessors: Error in script preprocessor ('${preprocessor.name || 'unknown'}'):`, e);
                     e.__source = TranspileErrorSource.Script;
                     throw e;
                 }

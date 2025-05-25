@@ -1,7 +1,7 @@
 import type { SourceMap as CivetSourceMapClass } from '@danielx/civet';
 import type { CivetCompileResult, CivetOutputMap, StandardRawSourceMap, CivetLinesSourceMap } from './civetTypes';
 
-const civetCompilerDebug = true;
+const civetCompilerDebug = false;
 
 // Dynamically load the Civet compiler to make it optional
 let _civetModule: typeof import('@danielx/civet') | null | undefined;

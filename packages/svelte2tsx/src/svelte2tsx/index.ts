@@ -13,6 +13,7 @@ import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
 import { preprocessCivet } from './utils/civetPreprocessor';
 import { chainSourceMaps } from './utils/civetMapChainer';
+import type { EncodedSourceMap } from './utils/civetMapChainer';
 
 function processSvelteTemplate(
     str: MagicString,
@@ -250,23 +251,35 @@ export function svelte2tsx(
         str.prepend('///<reference types="svelte" />\n');
         // Generate the base Svelte→TSX map
         const baseMap = str.generateMap({ hires: true, source: options?.filename });
+        // debug: log base TSX map before chaining Civet maps
+        console.log('[s2tsx] baseMap.mappings:', baseMap.mappings);
+
         // Chain in Civet maps only if present
-        let finalMap = baseMap;
+        let finalMap: EncodedSourceMap = baseMap;
         if (civetModuleInfo) {
+            console.log('[s2tsx] civetModuleInfo.map.mappings:', civetModuleInfo.map?.mappings);
+            console.log('[s2tsx] chaining civetModuleInfo');
             finalMap = chainSourceMaps(
                 finalMap,
                 civetModuleInfo.map,
                 civetModuleInfo.tsStartInSvelteWithTs,
                 civetModuleInfo.tsEndInSvelteWithTs
             );
+            console.log('[s2tsx] after chainSourceMaps(module) finalMap.mappings:', finalMap.mappings);
+            // debug: show final chained map info
+            console.log('[s2tsx] finalMap.sources:', finalMap.sources);
+            console.log('[s2tsx] finalMap.mappings:', finalMap.mappings);
         }
         if (civetInstanceInfo) {
+            console.log('[s2tsx] civetInstanceInfo.map.mappings:', civetInstanceInfo.map?.mappings);
+            console.log('[s2tsx] chaining civetInstanceInfo');
             finalMap = chainSourceMaps(
                 finalMap,
                 civetInstanceInfo.map,
                 civetInstanceInfo.tsStartInSvelteWithTs,
                 civetInstanceInfo.tsEndInSvelteWithTs
             );
+            console.log('[s2tsx] after chainSourceMaps(instance) finalMap.mappings:', finalMap.mappings);
         }
         return {
             code: str.toString(),

@@ -10,9 +10,7 @@
         "./bin/server.js": "./bin/server.js"
     },
     "scripts": {
-        "test": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register \"test/**/*.{test}.ts\"",
-        "test:chain": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register test/civet-chain.test.ts",
-        "test:civet": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register \"test/plugins/typescript/civet-features/**/*.spec.ts\"",
+        "test": "cross-env TS_NODE_TRANSPILE_ONLY=true mocha --require ts-node/register \"test/**/*.test.ts\"",
         "build": "tsc",
         "prepublishOnly": "npm run build",
         "watch": "tsc -w"
@@ -41,7 +39,6 @@
         "node": ">= 18.0.0"
     },
     "devDependencies": {
-        "@danielx/civet": "^0.10.3",
         "@types/estree": "^0.0.42",
         "@types/globrex": "^0.1.4",
         "@types/lodash": "^4.14.116",
@@ -51,7 +48,6 @@
         "cross-env": "^7.0.2",
         "mocha": "^9.2.0",
         "sinon": "^11.0.0",
-        "svelte-preprocess-with-civet": "^6.0.35",
         "ts-node": "^10.0.0"
     },
     "dependencies": {

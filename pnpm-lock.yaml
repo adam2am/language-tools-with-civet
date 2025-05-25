@@ -82,9 +82,6 @@ importers:
         specifier: ~3.1.0
         version: 3.1.0
     devDependencies:
-      '@danielx/civet':
-        specifier: ^0.10.3
-        version: 0.10.4(typescript@5.8.2)
       '@types/estree':
         specifier: ^0.0.42
         version: 0.0.42
@@ -112,9 +109,6 @@ importers:
       sinon:
         specifier: ^11.0.0
         version: 11.1.2
-      svelte-preprocess-with-civet:
-        specifier: ^6.0.35
-        version: 6.0.35(@danielx/civet@0.10.4(typescript@5.8.2))(svelte@4.2.19)(typescript@5.8.2)
       ts-node:
         specifier: ^10.0.0
         version: 10.9.1(@types/node@18.19.46)(typescript@5.8.2)
@@ -1291,46 +1285,6 @@ packages:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
 
-  svelte-preprocess-with-civet@6.0.35:
-    resolution: {integrity: sha512-nGkmWraITfiT9np2+hKgaPUatLuruMmuaYdg3BoOebzhO5+LmJsiNynfjrSdfMUAQYcUouKvoerNMA2k4uTHWQ==}
-    engines: {node: '>= 18.0.0'}
-    peerDependencies:
-      '@babel/core': ^7.27.1
-      '@danielx/civet': ^0.10.3
-      coffeescript: ^2.7.0
-      less: ^4.3.0
-      postcss: ^8.5.3
-      postcss-load-config: '>=6.0.1'
-      pug: ^3.0.2
-      sass: ^1.88.0
-      stylus: '>=0.64.0'
-      sugarss: ^5.0.0
-      svelte: ^4.2.19
-      typescript: ^5.8.2
-    peerDependenciesMeta:
-      '@babel/core':
-        optional: true
-      '@danielx/civet':
-        optional: true
-      coffeescript:
-        optional: true
-      less:
-        optional: true
-      postcss:
-        optional: true
-      postcss-load-config:
-        optional: true
-      pug:
-        optional: true
-      sass:
-        optional: true
-      stylus:
-        optional: true
-      sugarss:
-        optional: true
-      typescript:
-        optional: true
-
   svelte@4.2.19:
     resolution: {integrity: sha512-IY1rnGr6izd10B0A8LqsBfmlT5OILVuZ7XsI0vdGPEvuonFV7NYEUK4dAkm9Zg2q0Um92kYjTpS1CAP3Nh/KWw==}
     engines: {node: '>=16'}
@@ -1515,6 +1469,7 @@ snapshots:
       unplugin: 2.3.4
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@emmetio/abbreviation@2.3.3':
     dependencies:
@@ -1705,6 +1660,7 @@ snapshots:
       typescript: 5.8.2
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@ungap/promise-all-settled@1.1.2': {}
 
@@ -1723,7 +1679,8 @@ snapshots:
 
   acorn@8.12.1: {}
 
-  acorn@8.14.1: {}
+  acorn@8.14.1:
+    optional: true
 
   acorn@8.8.2: {}
 
@@ -2280,7 +2237,8 @@ snapshots:
 
   picomatch@2.3.1: {}
 
-  picomatch@4.0.2: {}
+  picomatch@4.0.2:
+    optional: true
 
   prettier-plugin-svelte@3.4.0(prettier@3.3.3)(svelte@4.2.19):
     dependencies:
@@ -2419,13 +2377,6 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
-  svelte-preprocess-with-civet@6.0.35(@danielx/civet@0.10.4(typescript@5.8.2))(svelte@4.2.19)(typescript@5.8.2):
-    dependencies:
-      svelte: 4.2.19
-    optionalDependencies:
-      '@danielx/civet': 0.10.4(typescript@5.8.2)
-      typescript: 5.8.2
-
   svelte@4.2.19:
     dependencies:
       '@ampproject/remapping': 2.3.0
@@ -2493,6 +2444,7 @@ snapshots:
       acorn: 8.14.1
       picomatch: 4.0.2
       webpack-virtual-modules: 0.6.2
+    optional: true
 
   v8-compile-cache-lib@3.0.1: {}
 
@@ -2568,7 +2520,8 @@ snapshots:
 
   vscode-uri@3.1.0: {}
 
-  webpack-virtual-modules@0.6.2: {}
+  webpack-virtual-modules@0.6.2:
+    optional: true
 
   which@2.0.2:
     dependencies:

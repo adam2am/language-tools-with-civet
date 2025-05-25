@@ -7,30 +7,21 @@ import { LSAndTSDocResolver } from '../LSAndTSDocResolver';
 import { getMarkdownDocumentation } from '../previewer';
 import { convertRange } from '../utils';
 import { getComponentAtPosition } from './utils';
-import { Logger } from '../../../logger';
 
 export class HoverProviderImpl implements HoverProvider {
     constructor(private readonly lsAndTsDocResolver: LSAndTSDocResolver) {}
 
     async doHover(document: Document, position: Position): Promise<Hover | null> {
-        Logger.debug('[TS HoverProvider] Enter doHover', { uri: document.uri, position });
         const { lang, tsDoc } = await this.getLSAndTSDoc(document);
-        Logger.debug('[TS HoverProvider] got LS & TSDoc', { filePath: tsDoc.filePath });
 
         const eventHoverInfo = this.getEventHoverInfo(lang, document, tsDoc, position);
         if (eventHoverInfo) {
-            Logger.debug('[TS HoverProvider] eventHoverInfo found', eventHoverInfo);
             return eventHoverInfo;
         }
 
-        const generatedPos = tsDoc.getGeneratedPosition(position);
-        const offset = tsDoc.offsetAt(generatedPos);
-        Logger.debug('[TS HoverProvider] generated position & offset', { generatedPos, offset });
-
+        const offset = tsDoc.offsetAt(tsDoc.getGeneratedPosition(position));
         const info = lang.getQuickInfoAtPosition(tsDoc.filePath, offset);
-        Logger.debug('[TS HoverProvider] quickInfo', info);
         if (!info) {
-            Logger.debug('[TS HoverProvider] no quickInfo -> null');
             return null;
         }
 
@@ -51,11 +42,6 @@ export class HoverProviderImpl implements HoverProvider {
             .concat(documentation ? ['---', documentation] : [])
             .join('\n');
 
-        const result = mapObjWithRangeToOriginal(tsDoc, {
-            range: convertRange(tsDoc, info.textSpan),
-            contents
-        });
-        Logger.debug('[TS HoverProvider] mapped hover', result);
         return mapObjWithRangeToOriginal(tsDoc, {
             range: convertRange(tsDoc, info.textSpan),
             contents

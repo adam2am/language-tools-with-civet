@@ -51,8 +51,6 @@ import {
 } from './plugins/typescript/features/CodeActionsProvider';
 import { createLanguageServices } from './plugins/css/service';
 import { FileSystemProvider } from './plugins/css/FileSystemProvider';
-import { CivetPlugin } from './plugins/civet';
-import { CivetLanguageServiceHost } from './typescriptServiceHost';
 
 namespace TagCloseRequest {
     export const type: RequestType<TextDocumentPositionParams, string | null, any> =
@@ -103,7 +101,6 @@ export function startServer(options?: LSOptions) {
     const configManager = new LSConfigManager();
     const pluginHost = new PluginHost(docManager);
     let sveltePlugin: SveltePlugin = undefined as any;
-    let civetPluginInstance: CivetPlugin;
     let watcher: FallbackWatcher | undefined;
     let pendingWatchPatterns: RelativePattern[] = [];
     let watchDirectory: (patterns: RelativePattern[]) => void = (patterns) => {
@@ -186,25 +183,8 @@ export function startServer(options?: LSOptions) {
                 !evt.initializationOptions?.dontFilterIncompleteCompletions,
             definitionLinkSupport: !!evt.capabilities.textDocument?.definition?.linkSupport
         });
-        // Prepare TypeScript document resolver for both TS and Civet providers
-        const normalizedWorkspaceUris = workspaceUris.map(normalizeUri);
-        const lsAndTSDocResolver = new LSAndTSDocResolver(docManager, normalizedWorkspaceUris, configManager, {
-            notifyExceedSizeLimit: notifyTsServiceExceedSizeLimit,
-            onProjectReloaded: refreshCrossFilesSemanticFeatures,
-            watch: true,
-            nonRecursiveWatchPattern,
-            watchDirectory: (patterns) => watchDirectory(patterns),
-            reportConfigError(diagnostic) {
-                connection?.sendDiagnostics(diagnostic);
-            }
-        });
-
-        const civetLanguageServiceHost = new CivetLanguageServiceHost();
-
         // Order of plugin registration matters for FirstNonNull, which affects for example hover info
         pluginHost.register((sveltePlugin = new SveltePlugin(configManager)));
-        civetPluginInstance = new CivetPlugin(configManager, lsAndTSDocResolver, civetLanguageServiceHost);
-        pluginHost.register(civetPluginInstance);
         pluginHost.register(new HTMLPlugin(docManager, configManager));
 
         const cssLanguageServices = createLanguageServices({
@@ -215,10 +195,20 @@ export function startServer(options?: LSOptions) {
         pluginHost.register(
             new CSSPlugin(docManager, configManager, workspaceFolders, cssLanguageServices)
         );
+        const normalizedWorkspaceUris = workspaceUris.map(normalizeUri);
         pluginHost.register(
             new TypeScriptPlugin(
                 configManager,
-                lsAndTSDocResolver,
+                new LSAndTSDocResolver(docManager, normalizedWorkspaceUris, configManager, {
+                    notifyExceedSizeLimit: notifyTsServiceExceedSizeLimit,
+                    onProjectReloaded: refreshCrossFilesSemanticFeatures,
+                    watch: true,
+                    nonRecursiveWatchPattern,
+                    watchDirectory: (patterns) => watchDirectory(patterns),
+                    reportConfigError(diagnostic) {
+                        connection?.sendDiagnostics(diagnostic);
+                    }
+                }),
                 normalizedWorkspaceUris,
                 docManager
             )
@@ -413,9 +403,6 @@ export function startServer(options?: LSOptions) {
 
     connection.onDidOpenTextDocument((evt) => {
         const document = docManager.openClientDocument(evt.textDocument);
-        if (civetPluginInstance) {
-            civetPluginInstance.handleDocumentChange(document);
-        }
         diagnosticsManager.scheduleUpdate(document);
     });
 
@@ -423,11 +410,6 @@ export function startServer(options?: LSOptions) {
     connection.onDidChangeTextDocument((evt) => {
         diagnosticsManager.cancelStarted(evt.textDocument.uri);
         docManager.updateDocument(evt.textDocument, evt.contentChanges);
-        const updatedDocument = docManager.get(evt.textDocument.uri);
-
-        if (civetPluginInstance && updatedDocument) {
-            civetPluginInstance.handleDocumentChange(updatedDocument);
-        }
         pluginHost.didUpdateDocument();
     });
     connection.onHover((evt) => pluginHost.doHover(evt.textDocument, evt.position));

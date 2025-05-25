@@ -32,6 +32,6 @@ require('ts-node').register({
 });
 // require('source-map-support').install();
 // Only run the civet folder tests temporarily
-require('./civet/civetMapChainer.test.ts');
+require('./civet/integration.test.ts');
 
 

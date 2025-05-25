@@ -6,7 +6,7 @@ import { normalizeCivetMap } from './civetMapNormalizer';
 import { getAttributeValue, getActualContentStartLine, stripCommonIndent } from './civetUtils';
 import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
 
-const civetPreprocessorDebug = true;
+const civetPreprocessorDebug = false;
 
 /**
  * Preprocess a Svelte document, compiling any <script lang="civet"> blocks

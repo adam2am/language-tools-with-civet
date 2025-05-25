@@ -6,6 +6,14 @@
 - [ ] Phase A2: Integration in `index.ts`
 - [ ] Phase A3: Testing, Benchmarking & CI
 
++## Current Findings
++- The `chainSourceMaps` logic currently mis-maps due to incorrect handling of raw sourcemap deltas from the Civet compiler, leading to wrong original position mappings.
++- The Standard V3 maps produced by `@danielx/civet` lose per-token granularity; higher precision may require using the raw `lines` representation.
++- We patched type mismatches in `chainSourceMaps` by reattaching `toUrl` and `toString` from the base map to satisfy the `SourceMap` interface.
++- Dynamic merging of `sources`, `sourcesContent`, and `names` is now implemented to support multiple Civet blocks.
++- Instrumented detailed logging of `baseMap`, `civetMap`, and `finalMap` in `index.ts` and `civetMapChainer.ts` to surface chaining behavior.
++- Next step: deepen debugging and refactor the chaining encoding step to ensure accurate, ordered segment processing.
+
 ## Conclusions & Next Steps
 
 We have successfully completed Phase A1, including:
