@@ -11,7 +11,7 @@ export interface EncodedSourceMap {
   sourcesContent?: string[];
 }
 
-const chainCivetDebug = true; // Master switch for all logs in this file
+const chainCivetDebug = true; // Master switch for all logs in this file (enabled for debugging)
 
 const logOptions = {
   input: true,     // Logs input baseMap and civetMap details
@@ -19,8 +19,8 @@ const logOptions = {
   tracerInit: false,  // Logs civetMap details used for TraceMap initialization
   lineProcessing: false, // Verbose: logs each generated line before remapping segments
   segmentTrace: false,   // Verbose: logs individual segment tracing (before/after/no trace)
-  remappedFull: true,   // Verbose: logs the entire remapped segments array
-  remappedSummary: false, // Logs a summary of the first 5 lines of remapped segments
+  remappedSegments: false,   // Verbose: logs the entire remapped segments array
+  remappedSummary: true, // Logs a summary of the first 5 lines of remapped segments
   encodedOutput: true  // Logs the final encoded mappings string
 };
 
@@ -51,26 +51,36 @@ export function chainSourceMaps(
         return lineSegments.map((segment) => {
           if (chainCivetDebug && logOptions.segmentTrace) console.log('[chainSourceMaps] Segment before trace:', segment);
           // Skip the source index since we always remap to baseMap.sources
-          const [genCol, , origLine, origCol, nameIdx] = segment;
+          const [genCol, _baseMapSourceIndex, origLine_fromBaseMap, origCol_fromBaseMap, nameIdx] = segment; // Unpack fully for clarity
           let traced: readonly number[] | null;
           try {
-            traced = traceSegment(tracer, origLine, origCol);
+            // traceSegment expects 0-indexed line and column
+            traced = traceSegment(tracer, origLine_fromBaseMap, origCol_fromBaseMap);
           } catch {
             traced = null;
           }
+
+          if (chainCivetDebug) {
+            const tracedL = traced ? traced[2] + 1 : 'null';
+            const tracedC = traced ? traced[3] : 'null';
+            console.log(`[chainSourceMaps] BaseMap Segment (gen L${lineIndex + 1}C${genCol}, orig (svelteWithTs) L${origLine_fromBaseMap + 1}C${origCol_fromBaseMap}) -> CivetMap Traced Original (Svelte) L${tracedL}C${tracedC}`);
+          }
+
           if (traced && traced.length >= 4) {
-            if (chainCivetDebug && logOptions.segmentTrace) console.log(`[chainSourceMaps] Traced (${origLine},${origCol}) -> (${traced[2]},${traced[3]})`);
+            if (chainCivetDebug && logOptions.segmentTrace) console.log(`[chainSourceMaps] Traced (${origLine_fromBaseMap},${origCol_fromBaseMap}) -> (${traced[2]},${traced[3]})`);
             const [, , newLine, newCol] = traced;
+            // Ensure newLine and newCol are 0-indexed if they came from traceSegment
             return [genCol, 0, newLine, newCol, nameIdx ?? 0] as [number, number, number, number, number];
           }
           if (chainCivetDebug && logOptions.segmentTrace) console.log('[chainSourceMaps] No trace for segment, using original');
           // Fallback: preserve original segment fully (ensure 5 elements)
-          const [g, s, oL, oC, n] = segment;
-          return [g, s, oL, oC, n] as [number, number, number, number, number];
+          // Segment from baseMap is already [genCol, sourceIdx, origLine, origCol, nameIdx?]
+          // We just need to ensure the sourceIndex is 0 if we couldn't trace it, though typically it should be.
+          return [genCol, _baseMapSourceIndex, origLine_fromBaseMap, origCol_fromBaseMap, nameIdx ?? 0] as [number, number, number, number, number];
         });
       }
     );
-    if (chainCivetDebug && logOptions.remappedFull) console.log('[chainSourceMaps] Remapped segments:', JSON.stringify(remapped, null, 2));
+    if (chainCivetDebug && logOptions.remappedSegments) console.log('[chainSourceMaps] Remapped segments:', JSON.stringify(remapped, null, 2));
     // Encode the merged mappings
     const mappings = encode(remapped);
     if (chainCivetDebug && logOptions.encodedOutput) console.log('[chainSourceMaps] Encoded chained mappings:', mappings);

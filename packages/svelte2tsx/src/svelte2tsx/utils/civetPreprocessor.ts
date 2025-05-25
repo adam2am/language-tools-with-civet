@@ -8,6 +8,11 @@ import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
 
 const civetPreprocessorDebug = false;
 
+const logOptions = {
+  snippetOffset: true,
+  firstSemicolonSegment: true,  
+}
+
 /**
  * Preprocess a Svelte document, compiling any <script lang="civet"> blocks
  * into TypeScript and normalizing their sourcemaps.
@@ -38,34 +43,39 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
     const start = tag.content.start;
     const end = tag.content.end;
     const snippet = svelte.slice(start, end);
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Original Civet snippet before dedent:\n${snippet}`);
     if (civetPreprocessorDebug) {
-      console.log(`[preprocessCivet] Detected <script lang=\"civet\"> (${isModule ? 'module' : 'instance'}) at offsets ${start}-${end}`);
+      console.log(`[preprocessCivet] Detected <script lang="civet"> (${isModule ? 'module' : 'instance'}) at offsets ${start}-${end}`);
       console.log(`[preprocessCivet] Original snippet content:\n${snippet}`);
     }
 
     // Dedent the snippet to strip common leading whitespace for accurate mapping
     const { dedented: dedentedSnippet } = stripCommonIndent(snippet);
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Civet snippet after dedent:\n${dedentedSnippet}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] Dedented snippet content:\n${dedentedSnippet}`);
     
 
     // Compile Civet to TS and get raw sourcemap from dedented snippet
     const { code: compiledTsCode, rawMap } = compileCivet(dedentedSnippet, filename);
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Compiled TS code from Civet:\n${compiledTsCode}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] compileCivet output code length: ${compiledTsCode.length}, rawMap lines count: ${rawMap && 'lines' in rawMap ? rawMap.lines.length : 0}`);
 
     if (!rawMap || !('lines' in rawMap)) continue;
 
-    // Debug raw Civet map lines for scenario.svelte to inspect the lines mapping
-    if (!isModule && filename === 'scenario.svelte') {
-      console.log(`[preprocessCivet DEBUG] Raw CivetMap Lines for ${filename}:`, JSON.stringify(rawMap.lines));
-    }
-
     // Compute line offset for snippet within the Svelte file dynamically by finding first content line
     const originalContentStartLine_1based = getActualContentStartLine(svelte, start);
     const originalCivetSnippetLineOffset_0based = originalContentStartLine_1based - 1;
+    // Debug: log snippet offset to Svelte line mapping
+
+    if (civetPreprocessorDebug && logOptions.snippetOffset) console.log(`[preprocessCivet] Civet snippet offsets ${start}-${end} -> Svelte line ${originalContentStartLine_1based}`);
+
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] originalContentStartLine_1based: ${originalContentStartLine_1based}, snippet offset (0-based): ${originalCivetSnippetLineOffset_0based}`);
+
 
     // Normalize the Civet sourcemap to a standard V3 map
     const map = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
+    // Debug: log first segment of normalized map mappings
+    if (civetPreprocessorDebug && logOptions.firstSemicolonSegment) console.log(`[civetPreprocessor.ts] normalized map first semicolon segment: ${map.mappings.split(';')[0]}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] normalizeCivetMap returned map mappings length: ${map.mappings.split(';').length}`);
 
     // Replace the Civet snippet with the compiled TS code (dedented)

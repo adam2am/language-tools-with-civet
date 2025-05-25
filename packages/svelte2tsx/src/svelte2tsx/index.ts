@@ -15,6 +15,16 @@ import { preprocessCivet } from './utils/civetPreprocessor';
 import { chainSourceMaps } from './utils/civetMapChainer';
 import type { EncodedSourceMap } from './utils/civetMapChainer';
 
+const svelte2tsxDebug = true;
+
+const logOptions = {
+    preprocessCivetOutput: true,
+    baseMapMappingsHead: true,
+    moduleChainingOffsets: true,
+    instanceChainingOffsets: true,
+    finalMapMappingsHead: true,
+}
+
 function processSvelteTemplate(
     str: MagicString,
     parse: typeof import('svelte/compiler').parse,
@@ -49,9 +59,24 @@ export function svelte2tsx(
     options.mode = options.mode || 'ts';
     options.version = options.version || VERSION;
 
-    // Civet preprocessor integration: transforms only if `<script lang="civet">` blocks are present and Civet is installed
+    if (svelte2tsxDebug) console.log('[svelte2tsx-index.ts] Initial Svelte content:\n', svelte);
+
     const filename = options.filename!;
-    const { code: svelteWithTs, module: civetModuleInfo, instance: civetInstanceInfo } = preprocessCivet(svelte, filename);
+    let svelteWithTs = svelte;
+    let civetModuleInfo = undefined;
+    let civetInstanceInfo = undefined;
+    // Only run preprocessCivet if a <script lang="civet"> is present
+    if (/\<script[^>]*lang=["']civet["']/i.test(svelte)) {
+        const civetResult = preprocessCivet(svelte, filename);
+        svelteWithTs = civetResult.code;
+        civetModuleInfo = civetResult.module;
+        civetInstanceInfo = civetResult.instance;
+        if (svelte2tsxDebug && logOptions.preprocessCivetOutput) console.log(`[svelte2tsx-index.ts] preprocessCivet output: moduleInfo=${JSON.stringify(civetModuleInfo)}, instanceInfo=${JSON.stringify(civetInstanceInfo)}`);
+    }
+
+    if (svelte2tsxDebug && logOptions.preprocessCivetOutput) console.log(`[svelte2tsx-index.ts] preprocessCivet output: moduleInfo=${JSON.stringify(civetModuleInfo)}, instanceInfo=${JSON.stringify(civetInstanceInfo)}`);
+
+    if (svelte2tsxDebug) console.log('[svelte2tsx-index.ts] Svelte content after preprocessCivet (svelteWithTs):\n', svelteWithTs);
 
     const str = new MagicString(svelteWithTs);
     const basename = path.basename(options.filename || '');
@@ -173,6 +198,7 @@ export function svelte2tsx(
         }
     }
 
+    // Hoist root snippets into module if present
     if (moduleScriptTag && rootSnippets.length > 0) {
         exportedNames.hoistableInterfaces.analyzeSnippets(rootSnippets);
     }
@@ -251,38 +277,37 @@ export function svelte2tsx(
         str.prepend('///<reference types="svelte" />\n');
         // Generate the base Svelte→TSX map
         const baseMap = str.generateMap({ hires: true, source: options?.filename });
-        // debug: log base TSX map before chaining Civet maps
-        console.log('[s2tsx] baseMap.mappings:', baseMap.mappings);
-
-        // Chain in Civet maps only if present
+        // Debug: log head of baseMap mappings
+        if (svelte2tsxDebug && logOptions.baseMapMappingsHead) console.log(`[svelte2tsx-index.ts] baseMap mappings head: ${baseMap.mappings.split(';').slice(0,3).join(';')}`);
         let finalMap: EncodedSourceMap = baseMap;
         if (civetModuleInfo) {
-            console.log('[s2tsx] civetModuleInfo.map.mappings:', civetModuleInfo.map?.mappings);
-            console.log('[s2tsx] chaining civetModuleInfo');
+            // Debug: log module chaining offsets
+            if (svelte2tsxDebug && logOptions.moduleChainingOffsets) console.log(`[svelte2tsx-index.ts] chaining module map at offsets ${civetModuleInfo.tsStartInSvelteWithTs}-${civetModuleInfo.tsEndInSvelteWithTs}`);
             finalMap = chainSourceMaps(
                 finalMap,
                 civetModuleInfo.map,
                 civetModuleInfo.tsStartInSvelteWithTs,
                 civetModuleInfo.tsEndInSvelteWithTs
             );
-            console.log('[s2tsx] after chainSourceMaps(module) finalMap.mappings:', finalMap.mappings);
-            // debug: show final chained map info
-            console.log('[s2tsx] finalMap.sources:', finalMap.sources);
-            console.log('[s2tsx] finalMap.mappings:', finalMap.mappings);
+            // Debug: log head of finalMap after module chaining
+            if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining module, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
         }
         if (civetInstanceInfo) {
-            console.log('[s2tsx] civetInstanceInfo.map.mappings:', civetInstanceInfo.map?.mappings);
-            console.log('[s2tsx] chaining civetInstanceInfo');
+            // Debug: log instance chaining offsets
+            if (svelte2tsxDebug && logOptions.instanceChainingOffsets) console.log(`[svelte2tsx-index.ts] chaining instance map at offsets ${civetInstanceInfo.tsStartInSvelteWithTs}-${civetInstanceInfo.tsEndInSvelteWithTs}`);
             finalMap = chainSourceMaps(
                 finalMap,
                 civetInstanceInfo.map,
                 civetInstanceInfo.tsStartInSvelteWithTs,
                 civetInstanceInfo.tsEndInSvelteWithTs
             );
-            console.log('[s2tsx] after chainSourceMaps(instance) finalMap.mappings:', finalMap.mappings);
+            // Debug: log head of finalMap after instance chaining
+            if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining instance, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
         }
+        const finalTsxCode = str.toString();
+        if (svelte2tsxDebug) console.log('[svelte2tsx-index.ts] Final generated TSX code:\n', finalTsxCode);
         return {
-            code: str.toString(),
+            code: finalTsxCode,
             map: finalMap,
             exportedNames: exportedNames.getExportsMap(),
             events: events.createAPI(),
