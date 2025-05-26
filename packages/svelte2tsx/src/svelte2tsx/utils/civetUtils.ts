@@ -126,3 +126,19 @@ export function computeCharOffsetInSnippet(snippet: string, targetLine0: number,
   offset += targetCol0;
   return offset;
 } 
+
+/**
+ * Count the number of leading blank lines in a snippet string.
+ */
+export function countLeadingBlankLines(snippet: string): number {
+  const lines = snippet.split(/\r?\n/);
+  let count = 0;
+  for (const line of lines) {
+    if (line.trim() === '') {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
+} 

@@ -8,7 +8,7 @@ import { decode } from '@jridgewell/sourcemap-codec';
 
 const POC_DEBUG = false;  
 
-describe('#POC #current: Civet preprocess block mapping POC', () => {
+describe('#POC #current: Civet preprocess block mapping POC = 1st part of index.ts', () => {
   // Phase 1: Setup fixture directory and select the target fixture (proving we can target specific Svelte files)
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   // Focus on a single fixture

@@ -113,8 +113,8 @@ export function chainSourceMaps(
               }
               try {
                 traced = traceSegment(tracer, localLine0, localCol0);
-              } catch {
-                traced = null;
+          } catch {
+            traced = null;
               }
             }
           }

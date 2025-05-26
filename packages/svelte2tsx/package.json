@@ -56,7 +56,7 @@
         "dev": "rollup -c -w",
         "test": "mocha test/test.ts",
         "test-current": "mocha test/test.ts --grep \"#current\"",
-        "test-civet": "mocha test/test.ts --grep \"#civet\""
+        "test-happy": "mocha test/test.ts --grep \"#happy\""
     },
     "files": [
         "index.mjs",

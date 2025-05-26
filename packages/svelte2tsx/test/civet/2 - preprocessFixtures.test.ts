@@ -4,7 +4,7 @@ import { SourceMapConsumer } from 'source-map';
 import fs from 'fs';
 import path from 'path';
 
-describe('current preprocessCivet on real fixtures', () => {
+describe('#happy: preprocessCivet on real fixtures', () => {
   const fixturesDir = path.join(__dirname, 'fixtures');
   const fixtureFiles = fs.readdirSync(fixturesDir).filter(f => f.endsWith('.svelte'));
   for (const fixtureFile of fixtureFiles) {

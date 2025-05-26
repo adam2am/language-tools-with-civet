@@ -4,7 +4,7 @@ import { normalizeCivetMap } from '../../src/svelte2tsx/utils/civetMapToV3';
 import { SourceMapConsumer } from 'source-map';
 import type { CivetLinesSourceMap } from '../../src/svelte2tsx/utils/civetTypes';
 
-describe('#current civetMapToV3 normalizeCivetMap (dynamic scenarios)', () => {
+describe('#happy: civetMapToV3 normalizeCivetMap (dynamic scenarios)', () => {
   interface Scenario {
     name: string;
     civetSnippet: string;

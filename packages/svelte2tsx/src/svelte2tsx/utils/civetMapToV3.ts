@@ -15,13 +15,15 @@ import type { CivetLinesSourceMap } from './civetTypes';
  * @param originalFullSvelteContent The full content of the original .svelte file.
  * @param svelteFilePath The file path of the .svelte file.
  * @param originalContentStartLine_1based The 1-based start line of the original snippet in the Svelte file.
+ * @param commonIndentRemoved The common indent removed from the original snippet.
  * @returns A Standard V3 RawSourceMap (Dedented Civet Snippet -> Compiled TS Snippet, with Svelte file context).
  */
 export function convertRawCivetMapToSvelteContextFormat(
   rawCivetMap: CivetLinesSourceMap,
   originalFullSvelteContent: string,
   svelteFilePath: string,
-  originalContentStartLine_1based: number = 1
+  originalContentStartLine_1based: number = 1,
+  commonIndentRemoved: string = ''
 ): StandardRawSourceMap {
   const lazerFocusDebug = false; // Keep debug flag if needed for local testing
   if (lazerFocusDebug) console.log('[convertRawCivetMapToSvelteContextFormat] Input rawCivetMap:', JSON.stringify(rawCivetMap).substring(0, 200) + '...');
@@ -66,8 +68,12 @@ export function convertRawCivetMapToSvelteContextFormat(
                      ? rawCivetMap.names[nameIndex]
                      : undefined;
 
+        // Adjust column to be relative to the original Svelte line start, by adding back common indent.
+        const originalColumn_0based_inSvelteIndentedLine = originalColumn_0based_inDedented + commonIndentRemoved.length;
+
         if (lazerFocusDebug) {
-            console.log(`  [DEBUG] Adding Mapping: GenL:${generatedLineNo_1based}, GenC:${generatedColumn_0based} -> OrigL (dedent):${originalLine_0based_inDedented + 1}, OrigC:${originalColumn_0based_inDedented}, Name:${name}`);
+            console.log(`  [DEBUG] Adding Mapping: GenL:${generatedLineNo_1based}, GenC:${generatedColumn_0based} -> OrigL (dedent):${originalLine_0based_inDedented + 1}, OrigC (dedent):${originalColumn_0based_inDedented}, Name:${name}`);
+            console.log(`    CommonIndent: '${commonIndentRemoved}' (length: ${commonIndentRemoved.length}) -> Final OrigC (absolute in Svelte): ${originalColumn_0based_inSvelteIndentedLine}`);
         }
 
         // Map back to absolute Svelte file line by adding snippet start line
@@ -76,7 +82,7 @@ export function convertRawCivetMapToSvelteContextFormat(
           source: svelteFilePath,
           original: {
             line: finalLine1,
-            column: originalColumn_0based_inDedented
+            column: originalColumn_0based_inSvelteIndentedLine // Store ABSOLUTE Svelte column
           },
           generated: {
             line: generatedLineNo_1based,
