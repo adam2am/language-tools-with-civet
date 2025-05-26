@@ -53,6 +53,8 @@ export function getScriptKindFromAttributes(
     const type = attrs.lang || attrs.type;
 
     switch (type) {
+        case 'civet':
+            // support civet scripts as TSX
         case 'ts':
         case 'typescript':
         case 'text/ts':

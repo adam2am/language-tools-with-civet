@@ -90,3 +90,39 @@ export function stripCommonIndent(snippet: string): { dedented: string; indent: 
   );
   return { dedented: dedentedLines.join('\n'), indent };
 } 
+
+/**
+ * Computes the 0-based character offset within a snippet string for a given
+ * 0-based line and 0-based column.
+ * @param snippet The snippet string.
+ * @param targetLine0 The 0-based target line number.
+ * @param targetCol0 The 0-based target column number on that line.
+ * @returns The 0-based character offset, or -1 if line/col are out of bounds.
+ */
+export function computeCharOffsetInSnippet(snippet: string, targetLine0: number, targetCol0: number): number {
+  const lines = snippet.split('\n');
+  if (targetLine0 < 0 || targetLine0 >= lines.length) {
+    return -1; // Target line out of bounds
+  }
+
+  let offset = 0;
+  for (let i = 0; i < targetLine0; i++) {
+    offset += lines[i].length + 1; // +1 for the newline character itself
+  }
+
+  if (targetCol0 < 0 || targetCol0 > lines[targetLine0].length) {
+    // Target column out of bounds for the target line (can be equal to length for end-of-line)
+    // For robustness, let's allow targetCol0 === lines[targetLine0].length (position after last char)
+    if (targetCol0 !== lines[targetLine0].length && targetCol0 > 0) { // allow 0 even if line is empty
+        // console.warn(`computeCharOffsetInSnippet: targetCol0 ${targetCol0} is out of bounds for line ${targetLine0} (len ${lines[targetLine0].length}). Snippet:\n${snippet}`);
+        // Based on typical sourcemap segment behavior, this might imply an issue with the raw map or an edge case.
+        // Snapping to end of line, though ideally raw map is always valid.
+        // offset += lines[targetLine0].length;
+        // return offset;
+        return -1; // Strict: consider out of bounds an error.
+    }
+  }
+  
+  offset += targetCol0;
+  return offset;
+} 
