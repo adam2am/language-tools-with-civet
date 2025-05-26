@@ -2,7 +2,7 @@ import { strict as assert } from 'assert';
 import { preprocessCivet } from '../../src/svelte2tsx/utils/civetPreprocessor';
 import { SourceMapConsumer } from 'source-map';
 
-describe('preprocessCivet (dynamic scenarios)', () => {
+describe('#current preprocessCivet (dynamic scenarios)', () => {
   interface Scenario {
     name: string;
     civetSnippet: string;

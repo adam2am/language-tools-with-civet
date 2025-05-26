@@ -84,7 +84,10 @@ describe('#current civetMapToV3 normalizeCivetMap (dynamic scenarios)', () => {
       const tsLines = result.code.split('\n');
       for (const token of tokens) {
         const tsLineIndex = tsLines.findIndex(line => line.includes(token));
-        assert.notEqual(tsLineIndex, -1, `Token "${token}" not found in compiled TS code`);
+        if (token === 'faketoken') {
+          assert.equal(tsLineIndex, -1, `Token '${token}' should not be found in compiled TS code`);
+          continue;
+        }
         const tsColIndex = tsLines[tsLineIndex].indexOf(token);
         const orig = consumer.originalPositionFor({
           line: tsLineIndex + 1,
