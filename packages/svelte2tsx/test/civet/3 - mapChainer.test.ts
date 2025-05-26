@@ -5,14 +5,16 @@ import MagicString from 'magic-string';
 import { preprocessCivet } from '../../src/svelte2tsx/utils/civetPreprocessor';
 import { chainSourceMaps, EncodedSourceMap } from '../../src/svelte2tsx/utils/civetMapChainer';
 
-describe('chainSourceMaps on real Civet fixtures', () => {
+describe('#currently chainSourceMaps on real Civet fixtures', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
   files.forEach((file) => {
 
-    it(`should correctly chain mappings for ${file}`, () => {
+    it(`should correctly chain mappings for ${file}`, function() {
       const fullPath = path.join(fixturesDir, file);
       const content = fs.readFileSync(fullPath, 'utf-8');
+      const hasCivet = /<script\s[^>]*lang=["']civet["']/.test(content);
+      if (!hasCivet) { this.skip(); }
       const result = preprocessCivet(content, file);
       console.log(`[chainSourceMaps] Preprocessed TSX for ${file}:\n${result.code}`);
       const blockInfo = result.instance || result.module;
