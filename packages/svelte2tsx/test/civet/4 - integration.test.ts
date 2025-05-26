@@ -12,10 +12,9 @@ import { getActualContentStartLine } from '../../src/svelte2tsx/utils/civetUtils
 function parseCivetBlocks(input: string) {
   const re = /<script\b([^>]*?\blang=["']civet["'][^>]*)>([\s\S]*?)<\/script>/g;
   const blocks: { snippet: string; startLine: number }[] = [];
-  let match;
+  let match: RegExpExecArray | null;
   while ((match = re.exec(input)) !== null) {
     const snippet = match[2];
-    // Compute the 1-based line where snippet content starts
     const localIndex = match[0].indexOf(snippet);
     const absIndex = match.index + localIndex;
     const startLine = getActualContentStartLine(input, absIndex);
@@ -24,13 +23,19 @@ function parseCivetBlocks(input: string) {
   return blocks;
 }
 
-describe('current end-to-end Civet integration (dynamic token mapping)', () => {
+describe('#current end-to-end Civet integration (dynamic token mapping)', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
 
   for (const file of files) {
     it(`should map all tokens correctly for ${file}`, () => {
       const input = fs.readFileSync(path.join(fixturesDir, file), 'utf-8');
+      // Print Svelte file with line numbers for debug
+      console.log(`\n--- Svelte file: ${file} ---`);
+      input.split(/\r?\n/).forEach((line, idx) => {
+        console.log(`${String(idx + 1).padStart(3)}| ${line}`);
+      });
+      console.log('-----------------------------\n');
       const blocks = parseCivetBlocks(input);
       if (!blocks.length) return; // skip non-civet files
 
@@ -38,6 +43,12 @@ describe('current end-to-end Civet integration (dynamic token mapping)', () => {
       const tokenRE = /[A-Za-z_$][A-Za-z0-9_$]*/g;
       const tokenPositions: Array<{ token: string; line: number; col: number }> = [];
       for (const { snippet, startLine } of blocks) {
+        // Print dedented snippet with line numbers
+        console.log(`--- Dedented Civet snippet (startLine in Svelte: ${startLine}) ---`);
+        snippet.split(/\r?\n/).forEach((line, idx) => {
+          console.log(`${String(startLine + idx).padStart(3)}| ${line}`);
+        });
+        console.log('---------------------------------------------\n');
         const lines = snippet.split('\n');
         for (let i = 0; i < lines.length; i++) {
           const text = lines[i];
@@ -61,6 +72,8 @@ describe('current end-to-end Civet integration (dynamic token mapping)', () => {
         assert.notStrictEqual(genLineIdx, -1, `Token '${token}' missing in TSX output`);
         const genCol = tsxLines[genLineIdx].indexOf(token);
         const pos = originalPositionFor(tracer, { line: genLineIdx + 1, column: genCol });
+        // Print mapping details for debug
+        console.log(`[${file}] Token '${token}' in TSX (L${genLineIdx + 1},C${genCol}) -> mapped to Svelte (L${pos.line},C${pos.column}), expected (L${origLine},C${origCol})`);
         assert.strictEqual(pos.source, file, `Source mismatch for '${token}'`);
         assert.strictEqual(pos.line, origLine, `Line mismatch for '${token}'`);
         assert.strictEqual(pos.column, origCol, `Column mismatch for '${token}'`);

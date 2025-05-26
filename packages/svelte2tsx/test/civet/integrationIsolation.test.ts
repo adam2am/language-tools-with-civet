@@ -7,10 +7,10 @@ import { decode } from '@jridgewell/sourcemap-codec';
 
 const integrationIsolationDebug = true; // Enable detailed logging
 // Focus on a single fixture if specified via environment variable
-const focusFixture = process.env.FOCUS_FIXTURE;
+const focusFixture = '2scripts.svelte';
 
 // This test mirrors exactly what index.ts does for Civet blocks, but isolates the mapping logic.
-describe('#current integrationIsolation: Civet preprocessing mapping only', () => {
+describe('current integrationIsolation: Civet preprocessing mapping only', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   let files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
   if (focusFixture) {

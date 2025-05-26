@@ -4,7 +4,7 @@ import { SourceMapConsumer } from 'source-map';
 import fs from 'fs';
 import path from 'path';
 
-describe('#current preprocessCivet for dual <script lang="civet"> blocks', () => {
+describe('current preprocessCivet for dual <script lang="civet"> blocks', () => {
   const fixtureFile = '2scripts.svelte';
   const fixturesDir = path.join(__dirname, 'fixtures');
   const fixturePath = path.join(fixturesDir, fixtureFile);

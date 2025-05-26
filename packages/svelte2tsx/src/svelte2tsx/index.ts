@@ -287,7 +287,12 @@ export function svelte2tsx(
                 finalMap,
                 civetModuleInfo.map,
                 civetModuleInfo.tsStartInSvelteWithTs,
-                civetModuleInfo.tsEndInSvelteWithTs
+                civetModuleInfo.tsEndInSvelteWithTs,
+                civetModuleInfo.originalFullSvelteContent,
+                civetModuleInfo.originalCivetSnippetWithIndents,
+                civetModuleInfo.commonIndentRemoved,
+                civetModuleInfo.originalSnippetStartOffsetInSvelte,
+                svelteWithTs
             );
             // Debug: log head of finalMap after module chaining
             if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining module, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
@@ -299,7 +304,12 @@ export function svelte2tsx(
                 finalMap,
                 civetInstanceInfo.map,
                 civetInstanceInfo.tsStartInSvelteWithTs,
-                civetInstanceInfo.tsEndInSvelteWithTs
+                civetInstanceInfo.tsEndInSvelteWithTs,
+                civetInstanceInfo.originalFullSvelteContent,
+                civetInstanceInfo.originalCivetSnippetWithIndents,
+                civetInstanceInfo.commonIndentRemoved,
+                civetInstanceInfo.originalSnippetStartOffsetInSvelte,
+                svelteWithTs
             );
             // Debug: log head of finalMap after instance chaining
             if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining instance, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);

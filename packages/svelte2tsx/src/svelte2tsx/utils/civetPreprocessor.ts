@@ -2,9 +2,10 @@ import MagicString from 'magic-string';
 import { parseHtmlx as parseHtmlxOriginal } from '../../utils/htmlxparser';
 import { parse } from 'svelte/compiler';
 import { compileCivet } from './civetMapRawLines';
-import { normalizeCivetMap } from './civetMapToV3';
+import { convertRawCivetMapToSvelteContextFormat } from './civetMapToV3';
 import { getAttributeValue, getActualContentStartLine, stripCommonIndent } from './civetUtils';
-import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
+import type { PreprocessResult } from './civetTypes';
+import type { RawSourceMap as StandardRawSourceMap } from 'source-map';
 
 const civetPreprocessorDebug = true; // Enabled for detailed logging
 
@@ -12,11 +13,27 @@ const logOptions = {
   snippetOffset: true,
   firstSemicolonSegment: true,  
   blockInfo: true, // Added to log CivetBlockInfo
+  rawCivetMapInputToConvert: true, // Log input to convertRawCivetMapToSvelteContextFormat
+}
+
+/**
+ * Represents the information extracted and processed for a Civet script block.
+ */
+export interface DetailedCivetBlockInfo {
+    map: StandardRawSourceMap; // Map from Dedented Civet Snippet -> TS Snippet (Context: Svelte file)
+    tsStartInSvelteWithTs: number;
+    tsEndInSvelteWithTs: number;
+    originalContentStartLine: number; // 1-based line in Svelte where original dedented Civet snippet's content begins
+    originalFullSvelteContent: string; // Full original content of the Svelte file
+    originalCivetSnippetWithIndents: string; // The <script> content as it was in the Svelte file, indents and all
+    commonIndentRemoved: string; // The common leading indent string that was removed
+    originalSnippetStartOffsetInSvelte: number; // 0-based character offset where the original Civet snippet (with indents) started in the Svelte file.
+    compiledTsCode: string; // The TS code generated from this Civet block
 }
 
 /**
  * Preprocess a Svelte document, compiling any <script lang="civet"> blocks
- * into TypeScript and normalizing their sourcemaps.
+ * into TypeScript and preparing their sourcemaps for later chaining.
  */
 export function preprocessCivet(svelte: string, filename: string): PreprocessResult {
   const ms = new MagicString(svelte);
@@ -31,68 +48,67 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
     const context = getAttributeValue((tag).attributes, 'context');
     const isModule = context === 'module';
 
-    // Change lang="civet" to lang="ts"
     const langAttributeNode = tag.attributes.find(attr => attr.name === 'lang' && attr.value !== true);
     if (langAttributeNode && Array.isArray(langAttributeNode.value) && langAttributeNode.value.length > 0) {
-        const langValueNode = langAttributeNode.value[0]; // This is a Text node
-        // langValueNode.start is the offset of the opening quote of the attribute value
-        // langValueNode.end is the offset *after* the closing quote of the attribute value
-        // We overwrite the content within the quotes.
+        const langValueNode = langAttributeNode.value[0];
         ms.overwrite(langValueNode.start + 1, langValueNode.end - 1, 'ts');
     }
 
-    const start = tag.content.start; // 0-based offset of where the <script> content STARTS
-    const end = tag.content.end;     // 0-based offset of where the <script> content ENDS
-    const originalCivetSnippetWithIndents = svelte.slice(start, end);
-    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Original Civet snippet (from svelte slice ${start}-${end}):\n${originalCivetSnippetWithIndents}`);
-    
-    // Dedent the snippet to strip common leading whitespace for accurate mapping by civet.compile
-    // The raw Civet map will be based on this dedentedSnippet.
+    const originalSnippetStartOffsetInSvelte = tag.content.start; // 0-based offset of where the <script> content STARTS
+    const originalSnippetEndOffsetInSvelte = tag.content.end;     // 0-based offset of where the <script> content ENDS
+    const originalCivetSnippetWithIndents = svelte.slice(originalSnippetStartOffsetInSvelte, originalSnippetEndOffsetInSvelte);
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Original Civet snippet (from svelte slice ${originalSnippetStartOffsetInSvelte}-${originalSnippetEndOffsetInSvelte}):\n${originalCivetSnippetWithIndents}`);
+
     const { dedented: dedentedSnippet, indent: commonIndentRemoved } = stripCommonIndent(originalCivetSnippetWithIndents);
     if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Civet snippet after dedent (commonIndentRemoved: '${commonIndentRemoved}'):\n${dedentedSnippet}`);
-    
-    // Compile Civet to TS and get raw sourcemap (from dedented snippet to TS code)
-    const { code: compiledTsCode, rawMap } = compileCivet(dedentedSnippet, filename);
+
+    const { code: compiledTsCode, rawMap: rawCivetMapFromCompile } = compileCivet(dedentedSnippet, filename); // This map is Dedented Civet -> TS
     if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Compiled TS code from Civet:\n${compiledTsCode}`);
-    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Raw Civet map (from dedented to TS):`, rawMap ? JSON.stringify(rawMap).substring(0,100) + '...': 'undefined');
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Raw Civet map (from dedented to TS):`, rawCivetMapFromCompile ? JSON.stringify(rawCivetMapFromCompile).substring(0,100) + '...': 'undefined');
 
-    if (!rawMap || !('lines' in rawMap)) continue;
+    if (!rawCivetMapFromCompile || !('lines' in rawCivetMapFromCompile)) continue;
 
-    // This is the 1-based line number in the Svelte file where the actual *content* of the
-    // UNDEDENTED Civet script block begins.
-    const originalContentStartLine_1based_in_Svelte = getActualContentStartLine(svelte, start);
-    const originalCivetSnippetLineOffset_0based_in_Svelte = originalContentStartLine_1based_in_Svelte - 1;
+    const originalContentStartLine_1based_in_Svelte = getActualContentStartLine(svelte, originalSnippetStartOffsetInSvelte);
+    if (civetPreprocessorDebug && logOptions.snippetOffset) console.log(`[civetPreprocessor.ts] originalContentStartLine_1based for dedented snippet in Svelte: ${originalContentStartLine_1based_in_Svelte}`);
 
-    if (civetPreprocessorDebug && logOptions.snippetOffset) console.log(`[civetPreprocessor.ts] originalContentStartLine_1based: ${originalContentStartLine_1based_in_Svelte}`);
-
-    // Normalize the Civet sourcemap to a standard V3 map
-    // This map will be from: Original Svelte File -> TS snippet
-    const v3map = normalizeCivetMap(
-      rawMap,
-      svelte,
-      originalContentStartLine_1based_in_Svelte,
-      filename
+    // Convert the raw Civet map (Dedented Civet -> TS) to a standard V3 map,
+    // but its original positions are still relative to the dedented Civet snippet.
+    // The map's sources/sourcesContent will point to the Svelte file.
+    if (civetPreprocessorDebug && logOptions.rawCivetMapInputToConvert) console.log(`[civetPreprocessor.ts] Input to convertRawCivetMapToSvelteContextFormat - rawMap: ${JSON.stringify(rawCivetMapFromCompile).substring(0,100)}, svelte content length: ${svelte.length}, filename: ${filename}`);
+    const civetMapForChaining = convertRawCivetMapToSvelteContextFormat(
+      rawCivetMapFromCompile,
+      svelte, // Full original svelte content
+      filename, // Svelte file path
+      originalContentStartLine_1based_in_Svelte // 1-based snippet start line
     );
     
-    if (civetPreprocessorDebug && logOptions.firstSemicolonSegment) console.log(`[civetPreprocessor.ts] normalizeCivetMap V3 output map first semicolon segment: ${v3map.mappings.split(';')[0]}`);
-    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] normalizeCivetMap V3 output map number of mapping lines: ${v3map.mappings.split(';').length}`);
+    if (civetPreprocessorDebug && logOptions.firstSemicolonSegment) console.log(`[civetPreprocessor.ts] convertRawCivetMapToSvelteContextFormat output map first semicolon segment: ${civetMapForChaining.mappings.split(';')[0]}`);
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] convertRawCivetMapToSvelteContextFormat output map number of mapping lines: ${civetMapForChaining.mappings.split(';').length}`);
 
-    ms.overwrite(start, end, compiledTsCode);
+    ms.overwrite(originalSnippetStartOffsetInSvelte, originalSnippetEndOffsetInSvelte, compiledTsCode);
 
-    const tsEndInSvelteWithTs = start + compiledTsCode.length;
-    const blockData: CivetBlockInfo = {
-      map: v3map,
-      tsStartInSvelteWithTs: start,
+    const tsEndInSvelteWithTs = originalSnippetStartOffsetInSvelte + compiledTsCode.length;
+    const blockData: DetailedCivetBlockInfo = {
+      map: civetMapForChaining, // This map is Dedented Civet Snippet -> TS Snippet (context Svelte file)
+      tsStartInSvelteWithTs: originalSnippetStartOffsetInSvelte,
       tsEndInSvelteWithTs,
-      originalContentStartLine: originalContentStartLine_1based_in_Svelte
+      originalContentStartLine: originalContentStartLine_1based_in_Svelte, // Line where dedented content starts
+      originalFullSvelteContent: svelte,
+      originalCivetSnippetWithIndents,
+      commonIndentRemoved,
+      originalSnippetStartOffsetInSvelte,
+      compiledTsCode
     };
 
     if (civetPreprocessorDebug && logOptions.blockInfo) {
-      console.log(`[civetPreprocessor.ts] CivetBlockInfo for ${isModule ? 'module' : 'instance'}:`);
+      console.log(`[civetPreprocessor.ts] DetailedCivetBlockInfo for ${isModule ? 'module' : 'instance'}:`);
       console.log(`  tsStartInSvelteWithTs: ${blockData.tsStartInSvelteWithTs}`);
       console.log(`  tsEndInSvelteWithTs: ${blockData.tsEndInSvelteWithTs}`);
-      console.log(`  originalContentStartLine (1-based in Svelte): ${blockData.originalContentStartLine}`);
-      console.log(`  map.mappings first segment: ${blockData.map.mappings.split(';')[0]}`);
+      console.log(`  originalContentStartLine (1-based in Svelte for dedented): ${blockData.originalContentStartLine}`);
+      console.log(`  originalSnippetStartOffsetInSvelte: ${blockData.originalSnippetStartOffsetInSvelte}`);
+      console.log(`  commonIndentRemoved: '${blockData.commonIndentRemoved}'`);
+      console.log(`  map.mappings first segment (Dedented Civet -> TS): ${blockData.map.mappings.split(';')[0]}`);
+      console.log(`  compiledTsCode length: ${blockData.compiledTsCode.length}`);
     }
 
     if (isModule) {

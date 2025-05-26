@@ -5,7 +5,7 @@ import MagicString from 'magic-string';
 import { preprocessCivet } from '../../src/svelte2tsx/utils/civetPreprocessor';
 import { chainSourceMaps, EncodedSourceMap } from '../../src/svelte2tsx/utils/civetMapChainer';
 
-describe('#currently chainSourceMaps on real Civet fixtures', () => {
+describe('current mapChainer: chainSourceMaps on real Civet fixtures', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
   files.forEach((file) => {
