@@ -1,8 +1,8 @@
 import MagicString from 'magic-string';
 import { parseHtmlx as parseHtmlxOriginal } from '../../utils/htmlxparser';
 import { parse } from 'svelte/compiler';
-import { compileCivet } from './civetCompiler';
-import { normalizeCivetMap } from './civetMapNormalizer';
+import { compileCivet } from './civetMapRawLines';
+import { normalizeCivetMap } from './civetMapToV3';
 import { getAttributeValue, getActualContentStartLine, stripCommonIndent } from './civetUtils';
 import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
 

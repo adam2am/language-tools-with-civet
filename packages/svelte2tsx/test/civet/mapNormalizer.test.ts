@@ -1,10 +1,10 @@
 import { strict as assert } from 'assert';
-import { compileCivet } from '../../src/svelte2tsx/utils/civetCompiler';
-import { normalizeCivetMap } from '../../src/svelte2tsx/utils/civetMapNormalizer';
+import { compileCivet } from '../../src/svelte2tsx/utils/civetMapRawLines';
+import { normalizeCivetMap } from '../../src/svelte2tsx/utils/civetMapToV3';
 import { SourceMapConsumer } from 'source-map';
 import type { CivetLinesSourceMap } from '../../src/svelte2tsx/utils/civetTypes';
 
-describe('normalizeCivetMap (dynamic scenarios)', () => {
+describe('#current civetMapToV3 normalizeCivetMap (dynamic scenarios)', () => {
   interface Scenario {
     name: string;
     civetSnippet: string;
@@ -23,7 +23,7 @@ describe('normalizeCivetMap (dynamic scenarios)', () => {
       name: 'simple function',
       civetSnippet: 'add := (a: number, b: number): number => a + b\n',
       svelteContent: `<script lang="civet">\nadd := (a: number, b: number): number => a + b\n</script>`,
-      tokens: ['add', 'a', 'b', 'a', 'b']
+      tokens: ['add', 'a', 'b', 'a', 'b', 'faketoken']
     },
     {
       name: 'named function with inner variable',

@@ -126,8 +126,7 @@ describe('preprocessCivet', () => {
     assert.strictEqual(instPos.column, 12, 'Instance: Original column for greet call');
   });
 
-  // It.Only fixed, cuz hyperfocus on this test case
-  it.only('scenario 4: single instance script from fixture', async () => {
+  it('scenario 4: single instance script from fixture', async () => {
     const fixturePath = path.join(__dirname, 'fixtures', 'scenario.svelte');
     const svelteContent = fs.readFileSync(fixturePath, 'utf-8');
     const fixtureFilename = 'scenario.svelte'; // Use the actual fixture name for map source

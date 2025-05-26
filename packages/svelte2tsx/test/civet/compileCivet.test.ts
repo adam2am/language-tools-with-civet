@@ -1,6 +1,6 @@
 import { strict as assert } from 'assert';
 import { SourceMapConsumer } from 'source-map';
-import { compileCivet } from '../../src/svelte2tsx/utils/civetCompiler';
+import { compileCivet } from '../../src/svelte2tsx/utils/civetMapRawLines';
 import type { CivetLinesSourceMap, StandardRawSourceMap, CivetOutputMap } from '../../src/svelte2tsx/utils/civetTypes';
 
 describe('compileCivet', () => {
@@ -9,7 +9,7 @@ describe('compileCivet', () => {
   const filename = 'scenario.civet'; // Match the scenario filename context
 
 
-  it.only('returns a CivetLinesSourceMap by default', () => {
+  it('returns a CivetLinesSourceMap by default', () => {
     const result = compileCivet(civetCode, filename); // Default: outputStandardV3Map is false
     console.log('\n--- CivetLinesSourceMap Test (scenario.civet content) ---');
     console.log('Compiled TypeScript:\n', result.code);
