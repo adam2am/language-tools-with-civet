@@ -14,7 +14,7 @@ import type { CivetLinesSourceMap } from './civetTypes';
 export function normalizeCivetMap(
   civetMap: CivetLinesSourceMap,
   originalFullSvelteContent: string,
-  originalCivetSnippetLineOffset_0based: number,
+  originalCivetSnippetLineOffset_0based: number, // This offset already points to the first *actual code line* in Svelte
   svelteFilePath: string
 ): StandardRawSourceMap {
 
@@ -37,6 +37,10 @@ export function normalizeCivetMap(
       }
     }
   }
+
+  // Determine if the source snippet itself started with a newline, which would affect its internal line numbering.
+  const snippetHadLeadingNewline = civetMap.source && (civetMap.source.startsWith('\n') || civetMap.source.startsWith('\r\n'));
+  if (lazerFocusDebug && snippetHadLeadingNewline) console.log('[normalizeCivetMap DEBUG] Detected snippetHadLeadingNewline');
 
   // The `civetMap.lines` array contains segments which are:
   // [generatedColumn_0based, sourceFileIndex_0based (relative to civetMap.sources if it existed), 
@@ -88,8 +92,18 @@ export function normalizeCivetMap(
                      ? civetMap.names[segment[4]] 
                      : undefined;
 
+        let effective_originalLine_0based_in_snippet = originalLine_0based_in_snippet;
+        if (snippetHadLeadingNewline) {
+          if (originalLine_0based_in_snippet > 0) {
+            effective_originalLine_0based_in_snippet = originalLine_0based_in_snippet - 1;
+          } 
+          // If originalLine_0based_in_snippet is 0, it maps the leading newline itself. 
+          // effective_originalLine_0based_in_snippet remains 0.
+        }
+        if (lazerFocusDebug && snippetHadLeadingNewline) console.log(`[normalizeCivetMap DEBUG] snippetHadLeadingNewline: orig_line=${originalLine_0based_in_snippet}, effective_orig_line=${effective_originalLine_0based_in_snippet}`);
+
         // Adjust original line to be relative to the start of the original .svelte file.
-        const finalOriginalLine_1based_in_svelte = originalLine_0based_in_snippet + originalCivetSnippetLineOffset_0based + 1;
+        const finalOriginalLine_1based_in_svelte = effective_originalLine_0based_in_snippet + originalCivetSnippetLineOffset_0based + 1;
         
         // Adjust original column to account for indentation within the Svelte script tag.
         const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet + svelteScriptTagIndent;
@@ -108,18 +122,7 @@ export function normalizeCivetMap(
         };
         if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] Adding mapping for Gen L${generatedLine_0based + 1}C${generatedColumn_0based}:`, JSON.stringify(mappingToAdd));
         lastProcessedGeneratedColumn = generatedColumn_0based; // Mark this generated column as processed.
-        generator.addMapping({
-          source: svelteFilePath, // All original positions are from the .svelte file
-          original: {
-            line: finalOriginalLine_1based_in_svelte,
-            column: finalOriginalColumn_0based_in_svelte 
-          },
-          generated: {
-            line: generatedLine_0based + 1, // SourceMapGenerator expects 1-based generated line
-            column: generatedColumn_0based
-          },
-          name: name
-        });
+        generator.addMapping(mappingToAdd);
       });
     });
   }
