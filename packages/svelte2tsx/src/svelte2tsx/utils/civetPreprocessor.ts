@@ -43,15 +43,19 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
     const start = tag.content.start;
     const end = tag.content.end;
     const snippet = svelte.slice(start, end);
-    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Original Civet snippet before dedent:\n${snippet}`);
+    // Remove leading blank lines to avoid offset mismatches
+    const snippetTrimmed = snippet.replace(/^[ \t]*[\r\n]+/, '');
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Original Civet snippet before dedent:
+${snippet}`);
     if (civetPreprocessorDebug) {
       console.log(`[preprocessCivet] Detected <script lang="civet"> (${isModule ? 'module' : 'instance'}) at offsets ${start}-${end}`);
       console.log(`[preprocessCivet] Original snippet content:\n${snippet}`);
     }
 
-    // Dedent the snippet to strip common leading whitespace for accurate mapping
-    const { dedented: dedentedSnippet } = stripCommonIndent(snippet);
-    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Civet snippet after dedent:\n${dedentedSnippet}`);
+    // Dedent the trimmed snippet to strip common leading whitespace for accurate mapping
+    const { dedented: dedentedSnippet } = stripCommonIndent(snippetTrimmed);
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Civet snippet after dedent:
+${dedentedSnippet}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] Dedented snippet content:\n${dedentedSnippet}`);
     
 
