@@ -765,3 +765,92 @@ To advance our Civet support and simplify the pipeline, we will:
 - Investigate upstream improvements or custom utilities to better preserve Civet's raw map precision when converting to V3 format.
 
 This trajectory will lead to a robust, maintainable Civet preprocessing pipeline and seamless integration with the Svelte Language Server.
+
+
+
+
+
+
+
+
+
+
+
+Ran tool
+
+
+Ran tool
+
+
+Read file: packages/svelte2tsx/src/svelte2tsx/utils/civetPreprocessor.ts
+
+
+Read file: packages/svelte2tsx/src/svelte2tsx/utils/civetMapChainer.ts
+
+
+Read file: packages/svelte2tsx/src/svelte2tsx/utils/civetMapToV3.ts
+
+
+Read file: packages/svelte2tsx/src/svelte2tsx/utils/civetUtils.ts
+
+
+Read file: packages/svelte2tsx/src/svelte2tsx/utils/civetMapLines.ts
+
+Here’s a birds-eye of what’s happening in the pipeline, and why you’re only seeing the “+1” drift inside your `<script>` block:
+
+1) **preprocessCivet**  
+   • You take the raw `.svelte` text, find your `<script lang="civet">…</script>`, dedent it, feed it to the Civet compiler (`compileCivet`), and get back  
+     – `compiledTsCode` (the TS that replaces your Civet snippet)  
+     – `rawMap` (a “CivetLinesSourceMap” whose `.lines` array describes how each generated TS line maps back to the *dedented* snippet)  
+   • You compute  
+     ```ts
+     const originalContentStartLine_1based = getActualContentStartLine(svelte, start);
+     const originalCivetSnippetLineOffset_0based = originalContentStartLine_1based - 1;
+     // … then normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename)
+     ```  
+     which ultimately does  
+     ```ts
+     finalOriginalLine_1based_in_svelte =
+       originalLine_0based_in_snippet
+       + originalCivetSnippetLineOffset_0based
+       + 1;
+     ```
+     so that “line 0 of your snippet” → “line (original snippet start) + 1 in the `.svelte` file.”
+
+2) **svelte2tsx / index.ts**  
+   • You stick that generated TS code back into the source with MagicString, build a base source map from the *whole* TSX output back to the original `.svelte`, then  
+   • **chainMaps** you “pipe” your Civet-normalized map through that base map, using trace-mapping.  
+
+3) **Where the “+1” comes from**  
+   - If you look at the Civet compiler’s output for *every* snippet today, it **always** emits an extra *blank line* at the top of the TS it generates.  
+   - That means `rawMap.lines[0]` is an empty array (no segments), and your real code starts in `rawMap.lines[1]`.  
+   - But your normalization code unconditionally does `generatedLine_0based + 1`, so a snippet line that really lives at `.lines[1]` ends up mapping to  
+     ```
+     originalLine_0based_in_snippet  (e.g. 0 for “function…”)  
+     + snippetOffset_0based          (e.g. 1 because your <script> starts on Svelte line 2)  
+     + 1                              (hard-coded in normalizeCivetMap)  
+     = 0 + 1 + 1  
+     = 2  ← which points you at Svelte line 2 “function…”  
+     ```
+     **but** because your *real* first snippet content actually showed up in `rawMap.lines[1]` (never in `[0]`), you consume that phantom blank, and end up at Svelte line 3 instead.  
+
+4) **Why your standalone test sees it, while your other tests did not**  
+   - Your “happy-path” or dynamic‐decode tests walk the `.lines` arrays themselves (they skip over that blank automatically), so they landed on line 2 and 3 correctly.  
+   - Your quick “`codeStr.indexOf(...); split('\n').length`” test, however, was driving its own `genLine` up by one more blank line, and then normalized it the same way, so you saw a one-line shift.  
+
+**To fix it**, you have two main levers:
+
+A) **Drop the phantom first line** in `normalizeCivetMap`  
+   Right before you loop `civetMap.lines.forEach((lineSegments, generatedLine_0based) => { … })`, test if `generatedLine_0based === 0` and `lineSegments.length === 0`, and simply `return;`—and thereafter treat your real first code line as “line 0.”  
+
+B) **Skip that leading newline in the compiled output**  
+   After you get `compiledTsCode` from `compileCivet`, do:
+   ```ts
+   if (compiledTsCode.startsWith('\n')) {
+     compiledTsCode = compiledTsCode.slice(1);
+     // and remember to shrink rawMap.lines by one element too
+   }
+   ```
+   so that your normalization no longer has to wrestle with a blank.  
+
+Either approach will realign your `<script>`‐block mappings back onto the correct Svelte lines, and your invocation in the template (which always falls back to the base map and never goes through Civet at all) will stay rock‐solid.

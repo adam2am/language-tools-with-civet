@@ -6,7 +6,9 @@ import type { EncodedSourceMap } from '../../src/svelte2tsx/utils/civetMapChaine
 import { decode } from '@jridgewell/sourcemap-codec';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 
-describe('4 - civet: #current chainSourceMaps on real Civet fixtures (via svelte2tsx)', () => {
+const compileTestDebug = false;
+
+describe('4 - civet: #happy chainSourceMaps on real Civet fixtures (via svelte2tsx)', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
   files.forEach((file) => {
