@@ -12,8 +12,9 @@ import path from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
 import { preprocessCivet } from './utils/civetPreprocessor';
-import { chainMaps, ChainBlock } from './utils/civetMapChainer';
+import { chainMaps, EnhancedChainBlock } from './utils/civetMapChainer';
 import type { EncodedSourceMap } from './utils/civetMapChainer';
+import { getLineAndColumnForOffset } from './utils/civetUtils';
 
 const svelte2tsxDebug = false;
 
@@ -73,8 +74,6 @@ export function svelte2tsx(
         civetInstanceInfo = civetResult.instance;
         if (svelte2tsxDebug && logOptions.preprocessCivetOutput) console.log(`[svelte2tsx-index.ts] preprocessCivet output: moduleInfo=${JSON.stringify(civetModuleInfo)}, instanceInfo=${JSON.stringify(civetInstanceInfo)}`);
     }
-
-    if (svelte2tsxDebug && logOptions.preprocessCivetOutput) console.log(`[svelte2tsx-index.ts] preprocessCivet output: moduleInfo=${JSON.stringify(civetModuleInfo)}, instanceInfo=${JSON.stringify(civetInstanceInfo)}`);
 
     if (svelte2tsxDebug) console.log('[svelte2tsx-index.ts] Svelte content after preprocessCivet (svelteWithTs):\n', svelteWithTs);
 
@@ -282,27 +281,47 @@ export function svelte2tsx(
         // Debug: log head of baseMap mappings
         if (svelte2tsxDebug && logOptions.baseMapMappingsHead) console.log(`[svelte2tsx-index.ts] baseMap mappings head: ${baseMap.mappings.split(';').slice(0,3).join(';')}`);
         // Collect Civet blocks for chaining
-        const blocks: ChainBlock[] = [];
+        const civetBlocksForChaining: EnhancedChainBlock[] = [];
+
         if (civetModuleInfo) {
             if (svelte2tsxDebug && logOptions.moduleChainingOffsets) console.log(`[svelte2tsx-index.ts] queueing module block map at offsets ${civetModuleInfo.tsStartInSvelteWithTs}-${civetModuleInfo.tsEndInSvelteWithTs}`);
-            blocks.push({
+            const { line: startLine, column: startCol } = getLineAndColumnForOffset(svelteWithTs, civetModuleInfo.tsStartInSvelteWithTs);
+            const { line: endLine } = getLineAndColumnForOffset(svelteWithTs, civetModuleInfo.tsEndInSvelteWithTs);
+            civetBlocksForChaining.push({
                 map: civetModuleInfo.map,
-                tsStart: civetModuleInfo.tsStartInSvelteWithTs,
-                tsEnd: civetModuleInfo.tsEndInSvelteWithTs
+                tsStartCharInSvelteWithTs: civetModuleInfo.tsStartInSvelteWithTs,
+                tsEndCharInSvelteWithTs: civetModuleInfo.tsEndInSvelteWithTs,
+                tsStartLineInSvelteWithTs: startLine,
+                tsStartColInSvelteWithTs: startCol,
+                tsEndLineInSvelteWithTs: endLine,
+                originalCivetLineCount: civetModuleInfo.originalCivetLineCount,
+                compiledTsLineCount: civetModuleInfo.compiledTsLineCount
             });
         }
         if (civetInstanceInfo) {
             if (svelte2tsxDebug && logOptions.instanceChainingOffsets) console.log(`[svelte2tsx-index.ts] queueing instance block map at offsets ${civetInstanceInfo.tsStartInSvelteWithTs}-${civetInstanceInfo.tsEndInSvelteWithTs}`);
-            blocks.push({
+            const { line: startLine, column: startCol } = getLineAndColumnForOffset(svelteWithTs, civetInstanceInfo.tsStartInSvelteWithTs);
+            const { line: endLine } = getLineAndColumnForOffset(svelteWithTs, civetInstanceInfo.tsEndInSvelteWithTs);
+            civetBlocksForChaining.push({
                 map: civetInstanceInfo.map,
-                tsStart: civetInstanceInfo.tsStartInSvelteWithTs,
-                tsEnd: civetInstanceInfo.tsEndInSvelteWithTs
+                tsStartCharInSvelteWithTs: civetInstanceInfo.tsStartInSvelteWithTs,
+                tsEndCharInSvelteWithTs: civetInstanceInfo.tsEndInSvelteWithTs,
+                tsStartLineInSvelteWithTs: startLine,
+                tsStartColInSvelteWithTs: startCol,
+                tsEndLineInSvelteWithTs: endLine,
+                originalCivetLineCount: civetInstanceInfo.originalCivetLineCount,
+                compiledTsLineCount: civetInstanceInfo.compiledTsLineCount
             });
         }
+
+        // Sort blocks by start character offset, crucial for cumulative delta calculation
+        civetBlocksForChaining.sort((a, b) => a.tsStartCharInSvelteWithTs - b.tsStartCharInSvelteWithTs);
+
         // Chain all blocks in one pass
         let finalMap = baseMap;
-        if (blocks.length) {
-            finalMap = chainMaps(baseMap, blocks);
+        if (civetBlocksForChaining.length) {
+            // Pass originalSvelteContent (named `svelte` here) and svelteWithTs (str.original)
+            finalMap = chainMaps(baseMap, civetBlocksForChaining, svelte, str.original);
             if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining all blocks, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
         }
         const finalTsxCode = str.toString();

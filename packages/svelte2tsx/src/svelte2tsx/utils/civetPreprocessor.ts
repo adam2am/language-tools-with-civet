@@ -85,13 +85,19 @@ ${dedentedSnippet}`);
     // Replace the Civet snippet with the compiled TS code (dedented)
     ms.overwrite(start, end, compiledTsCode);
 
+    // Calculate line counts
+    const originalCivetLineCount = dedentedSnippet.split('\n').length;
+    const compiledTsLineCount = compiledTsCode.split('\n').length;
+
     const tsEndInSvelteWithTs = start + compiledTsCode.length;
-    const blockData: CivetBlockInfo = {
+    const blockData = {
       map,
       tsStartInSvelteWithTs: start,
       tsEndInSvelteWithTs,
-      originalContentStartLine: originalContentStartLine_1based
-    };
+      originalContentStartLine: originalContentStartLine_1based,
+      originalCivetLineCount,
+      compiledTsLineCount
+    } as CivetBlockInfo;
 
     if (isModule) {
       result.module = blockData;

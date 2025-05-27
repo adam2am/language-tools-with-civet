@@ -12,81 +12,200 @@ export interface EncodedSourceMap {
 }
 
 // A mapping block from a Civet-generated map to apply
-export interface ChainBlock {
+export interface EnhancedChainBlock {
   map: EncodedSourceMap;
-  tsStart: number;
-  tsEnd: number;
+  tsStartCharInSvelteWithTs: number;
+  tsEndCharInSvelteWithTs: number;
+  tsStartLineInSvelteWithTs: number; // 1-based
+  tsStartColInSvelteWithTs: number;  // 0-based
+  tsEndLineInSvelteWithTs: number;   // 1-based
+  originalCivetLineCount: number;
+  compiledTsLineCount: number;
 }
 
-const chainCivetDebug = true; // Master switch for all logs in this file (enabled for debugging)
+const chainCivetDebug = true; // Debug enabled for pipeline inspection
 
 const logOptions = {
-  input: true,     // Logs input baseMap and civetMap details
-  decodedBase: false, // Logs decoded baseMap segments
-  tracerInit: false,  // Logs civetMap details used for TraceMap initialization
-  lineProcessing: false, // Verbose: logs each generated line before remapping segments
-  segmentTrace: false,   // Verbose: logs individual segment tracing (before/after/no trace)
-  remappedSegments: false,   // Verbose: logs the entire remapped segments array
-  remappedSummary: true, // Logs a summary of the first 5 lines of remapped segments
-  encodedOutput: true  // Logs the final encoded mappings string
+  input: true,     // log input baseMap and blocks
+  decodedBase: false,
+  tracerInit: false,
+  lineProcessing: false,
+  segmentTrace: true, // log each segment guard and result
+  remappedSegments: false,
+  remappedSummary: false,
+  encodedOutput: false
 };
+
+class LineOffsetCalculator {
+  private lineOffsets: number[];
+  constructor(content: string) {
+      this.lineOffsets = [0]; // First line starts at offset 0
+      for (let i = 0; i < content.length; i++) {
+          if (content[i] === '\n') {
+              this.lineOffsets.push(i + 1);
+          }
+      }
+  }
+
+  getOffset(line1Based: number, col0Based: number): number {
+      if (line1Based < 1 || line1Based > this.lineOffsets.length) {
+          if (chainCivetDebug) console.warn(`[LineOffsetCalculator] Line ${line1Based} out of bounds (1-${this.lineOffsets.length}). Clamping.`);
+          line1Based = Math.max(1, Math.min(line1Based, this.lineOffsets.length));
+      }
+      const lineStartOffset = this.lineOffsets[line1Based - 1];
+      return lineStartOffset + col0Based;
+  }
+}
 
 /**
  * Chain multiple Civet-generated source maps into a base map.
  * This runs synchronously using trace-mapping and sourcemap-codec.
+ * This new version correctly handles line shifts for template content.
  */
 export function chainMaps(
   baseMap: EncodedSourceMap,
-  blocks: ChainBlock[]
+  blocks: EnhancedChainBlock[], // Assumed sorted by tsStartCharInSvelteWithTs
+  originalSvelteContent: string,
+  svelteWithTsContent: string // Content to which baseMap's original_lines/cols refer
 ): EncodedSourceMap {
-  if (chainCivetDebug && logOptions.input) console.log('[chainMaps] Starting chaining of Civet blocks');
-  // Decode base mappings once
-  let decoded = decode(baseMap.mappings);
-  if (chainCivetDebug && logOptions.decodedBase) console.log('[chainMaps] Decoded baseMap:', JSON.stringify(decoded, null, 2));
-  // For each Civet block, remap segments
-  for (const { map: civetMap } of blocks) {
-    if (chainCivetDebug && logOptions.tracerInit) console.log('[chainMaps] Init tracer with block mappings');
-    const tracer = new TraceMap({
-      version: 3,
-      sources: civetMap.sources,
-      names: civetMap.names,
-      mappings: civetMap.mappings,
-      file: civetMap.file,
-      sourcesContent: civetMap.sourcesContent,
-    });
-    decoded = decoded.map((lineSegments, lineIndex) => {
-      if (chainCivetDebug && logOptions.lineProcessing) console.log(`[chainMaps] Processing gen line ${lineIndex+1}`);
-      return lineSegments.map((segment) => {
-        if (chainCivetDebug && logOptions.segmentTrace) console.log('[chainMaps] Segment before trace:', segment);
-        const [genCol, sourceIdx, origLine, origCol, nameIdx] = segment as [number, number, number, number, number];
-        let traced: readonly number[] | null = null;
-        try {
-          traced = traceSegment(tracer, origLine, origCol);
-        } catch {
-          /* no trace available */
-        }
-        if (traced && traced.length >= 4) {
-          const [, , newLine, newCol] = traced;
-          return [genCol, 0, newLine, newCol, nameIdx] as [number, number, number, number, number];
-        }
-        // fallback to original segment
-        return [genCol, sourceIdx, origLine, origCol, nameIdx] as [number, number, number, number, number];
-      });
-    });
+  if (chainCivetDebug && logOptions.input) {
+    console.log('[chainMaps] Starting refactored chaining.');
+    console.log('[chainMaps] BaseMap sources:', baseMap.sources);
+    console.log('[chainMaps] Number of blocks:', blocks.length);
+    blocks.forEach((block, i) => console.log(`[chainMaps] Block ${i}: originalLines=${block.originalCivetLineCount}, compiledLines=${block.compiledTsLineCount}, tsStartChar=${block.tsStartCharInSvelteWithTs}, tsEndChar=${block.tsEndCharInSvelteWithTs}, tsStartLine=${block.tsStartLineInSvelteWithTs}`));
   }
-  // Encode the merged mappings
-  const mappings = encode(decoded);
-  if (chainCivetDebug && logOptions.encodedOutput) console.log('[chainMaps] Encoded chained mappings:', mappings);
-  // Return a new source map preserving baseMap metadata
-  return { ...baseMap, mappings };
+
+  const svelteWithTsLineOffsets = new LineOffsetCalculator(svelteWithTsContent);
+  const decodedBaseMap = decode(baseMap.mappings);
+  if (chainCivetDebug && logOptions.decodedBase) console.log('[chainMaps] Decoded baseMap segments (first 5 lines):', JSON.stringify(decodedBaseMap.slice(0,5)));
+
+  const blockTracers = blocks.map(block => new TraceMap({
+    version: 3,
+    sources: block.map.sources,
+    names: block.map.names,
+    mappings: block.map.mappings,
+    file: block.map.file,
+    sourcesContent: block.map.sourcesContent
+  }));
+
+  const cumulativeLineDeltas: number[] = [0]; 
+  let currentCumulativeDelta = 0;
+  for (let i = 0; i < blocks.length; i++) {
+    // Note: This delta is calculated based on line counts passed from preprocessCivet.
+    // It reflects the change in line count from original Civet to compiled TS for that block.
+    currentCumulativeDelta += (blocks[i].compiledTsLineCount - blocks[i].originalCivetLineCount);
+    cumulativeLineDeltas.push(currentCumulativeDelta);
+  }
+
+  const remappedLines: number[][][] = [];
+
+  for (const lineSegments of decodedBaseMap) {
+    // Pre-filter baseMap segments
+    const scriptSegments: { segment: number[]; charOffset: number; blockIndex: number }[] = [];
+    const templateSegments: { segment: number[]; charOffset: number }[] = [];
+    for (const segment of lineSegments) {
+      const [, , origLine0, origCol0] = segment;
+      const charOffset = svelteWithTsLineOffsets.getOffset(origLine0 + 1, origCol0);
+      // Find which block, if any, this offset belongs to
+      let blockIndex = -1;
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        if (charOffset >= b.tsStartCharInSvelteWithTs && charOffset < b.tsEndCharInSvelteWithTs) {
+          blockIndex = i;
+          break;
+        }
+      }
+      if (blockIndex >= 0) {
+        scriptSegments.push({ segment, charOffset, blockIndex });
+      } else {
+        templateSegments.push({ segment, charOffset });
+      }
+    }
+    // Remap script segments via trace-mapping
+    const remappedScript: number[][] = [];
+    for (const { segment, blockIndex } of scriptSegments) {
+      const [generatedCol, , origLine0, origCol0, nameIndex] = segment;
+      const block = blocks[blockIndex];
+      const tracer = blockTracers[blockIndex];
+      const relLine = (origLine0 + 1) - block.tsStartLineInSvelteWithTs;
+      const relCol = relLine === 0
+        ? origCol0 - block.tsStartColInSvelteWithTs
+        : origCol0;
+      let traced: readonly number[] | null = null;
+      try {
+        traced = traceSegment(tracer, relLine, Math.max(0, relCol));
+      } catch { }
+      if (traced && traced.length >= 4) {
+        remappedScript.push([generatedCol, 0, traced[2], traced[3], nameIndex]);
+      } else {
+        // Fallback: map to start of script block in original Svelte
+        remappedScript.push([generatedCol, 0, block.tsStartLineInSvelteWithTs - 1, 0, nameIndex]);
+      }
+    }
+    // Remap template segments by adjusting line delta
+    const remappedTemplate: number[][] = [];
+    for (const { segment, charOffset } of templateSegments) {
+      const [generatedCol, , origLine0, origCol0, nameIndex] = segment;
+      let delta = 0;
+      for (let k = 0; k < blocks.length; k++) {
+        if (charOffset < blocks[k].tsStartCharInSvelteWithTs) {
+          delta = cumulativeLineDeltas[k];
+          break;
+        }
+        delta = cumulativeLineDeltas[k + 1];
+      }
+      remappedTemplate.push([generatedCol, 0, origLine0 - delta, origCol0, nameIndex]);
+    }
+    // Merge and sort segments by generated column
+    const merged = remappedScript.concat(remappedTemplate).sort((a, b) => a[0] - b[0]);
+    remappedLines.push(merged);
+  }
+
+  if (chainCivetDebug && logOptions.remappedSegments) console.log('[chainMaps] Remapped segments (first 5 lines):', JSON.stringify(remappedLines.slice(0,5)));
+  if (chainCivetDebug && logOptions.remappedSummary) {
+    console.log('[chainMaps] Remapped summary (first 5 lines):');
+    remappedLines.slice(0,5).forEach((line, i) => console.log(`  Line ${i+1}: ${JSON.stringify(line)}`));
+  }
+  
+  const finalEncodedMappings = encode(remappedLines as any);
+  if (chainCivetDebug && logOptions.encodedOutput) console.log('[chainMaps] Final encoded mappings:', finalEncodedMappings.slice(0,100) + "...");
+
+  if (chainCivetDebug) {
+    const decodedFinal = decode(finalEncodedMappings);
+    console.log('[chainMaps] Final decoded mappings (first 3 lines):', JSON.stringify(decodedFinal.slice(0,3), null, 2));
+  }
+
+  return {
+    version: 3,
+    sources: [baseMap.sources[0]], 
+    sourcesContent: [originalSvelteContent],
+    names: baseMap.names,
+    mappings: finalEncodedMappings,
+    file: baseMap.file 
+  };
 }
 
 // For backward compatibility: single-block chaining
+// This function's old signature is insufficient for the new chainMaps logic.
+// It would need full EnhancedChainBlock details.
+// If svelte2tsx/index.ts is updated to call the main chainMaps directly, this might become obsolete.
+// For now, it's updated to accept parts of EnhancedChainBlock, but it might not be practically callable
+// without significant changes at its call sites if they don't have all this information.
 export function chainSourceMaps(
   baseMap: EncodedSourceMap,
-  civetMap: EncodedSourceMap,
-  tsStart: number,
-  tsEnd: number
+  blockDetails: Omit<EnhancedChainBlock, 'map'> & { map: EncodedSourceMap },
+  originalSvelteContent: string,
+  svelteWithTsContent: string
 ): EncodedSourceMap {
-  return chainMaps(baseMap, [{ map: civetMap, tsStart, tsEnd }]);
+  const block: EnhancedChainBlock = {
+    map: blockDetails.map,
+    tsStartCharInSvelteWithTs: blockDetails.tsStartCharInSvelteWithTs,
+    tsEndCharInSvelteWithTs: blockDetails.tsEndCharInSvelteWithTs,
+    tsStartLineInSvelteWithTs: blockDetails.tsStartLineInSvelteWithTs,
+    tsStartColInSvelteWithTs: blockDetails.tsStartColInSvelteWithTs,
+    tsEndLineInSvelteWithTs: blockDetails.tsEndLineInSvelteWithTs,
+    originalCivetLineCount: blockDetails.originalCivetLineCount,
+    compiledTsLineCount: blockDetails.compiledTsLineCount,
+  };
+  return chainMaps(baseMap, [block], originalSvelteContent, svelteWithTsContent);
 } 

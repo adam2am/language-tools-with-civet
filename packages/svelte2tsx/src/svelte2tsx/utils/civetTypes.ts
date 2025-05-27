@@ -54,6 +54,10 @@ export interface CivetBlockInfo {
     tsEndInSvelteWithTs: number;
     /** 1-based line number in the original Svelte file where the Civet content started */
     originalContentStartLine: number;
+    /** Line count of the original (dedented) Civet snippet */
+    originalCivetLineCount: number;
+    /** Line count of the compiled TypeScript code for this block */
+    compiledTsLineCount: number;
 }
 
 /**
