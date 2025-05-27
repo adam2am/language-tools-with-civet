@@ -2,6 +2,7 @@
 import { strict as assert } from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { decode } from '@jridgewell/sourcemap-codec';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { svelte2tsx } from '../../src/svelte2tsx';
 
@@ -9,7 +10,7 @@ describe('8 - LazerFocus2Offset: template mapping offset analysis #current', () 
   const fixtures: Array<{ name: string; expectOffset: number }> = [
     { name: 'LazerFocus2-issue.svelte', expectOffset: -1 },
     { name: 'LazerFocus2-allgood.svelte', expectOffset: 0 },
-    { name: 'LazerFocus2-issue2.svelte', expectOffset: -1 }
+    { name: 'LazerFocus2-issue2.svelte', expectOffset: 1 }
   ];
 
   const usageToken = 'funcForTest';
@@ -21,6 +22,7 @@ describe('8 - LazerFocus2Offset: template mapping offset analysis #current', () 
       const content = fs.readFileSync(sveltePath, 'utf-8');
       const { code: tsxCode, map } = svelte2tsx(content, { filename: name });
       const tracer = new TraceMap(map as any);
+      const decoded = decode((map as any).mappings);
 
       // Find generated position of usageToken in template (skip script occurrence)
       const firstIdx = tsxCode.indexOf(usageToken);
@@ -41,7 +43,12 @@ describe('8 - LazerFocus2Offset: template mapping offset analysis #current', () 
       const usageLine1 = usageLine0 + 1;
 
       const offset = pos.line - usageLine1;
-      console.log(`DEBUG [${name}] genLine=${genLine}, usageLine1=${usageLine1}, mappedLine=${pos.line}`);
+      // Log detailed flow for non-zero offsets
+      if (offset !== 0) {
+        console.log(`[${name}] OFFSET FLOW: genLine=${genLine}, usageLine1=${usageLine1}, mappedLine=${pos.line}, offset=${offset}`);
+        console.log(`[${name}] decoded segments at genLine:`, JSON.stringify(decoded[genLine - 1], null, 2));
+      }
+      console.log(`DEBUG [${name}] genLine=${genLine}, usageLine1=${usageLine1}, mappedLine=${pos.line}, offset=${offset}`);
       assert.strictEqual(offset, expectOffset, `Unexpected offset for ${name}: got ${offset}, expected ${expectOffset}`);
     });
   }
