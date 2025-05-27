@@ -3,7 +3,7 @@ import { SourceMapConsumer } from 'source-map';
 import { compileCivet } from '../../src/svelte2tsx/utils/civetCompiler';
 import type { CivetLinesSourceMap, StandardRawSourceMap, CivetOutputMap } from '../../src/svelte2tsx/utils/civetTypes';
 
-describe('compileCivet', () => {
+describe('1 - compileCivet #happy', () => {
   // Civet code specifically from fixtures/scenario.svelte (script part)
   const civetCode = '\n  // Instance script\n  reactiveValue := 42\n  anotherVar := reactiveValue + 10\n  console.log anotherVar\n';
   const filename = 'scenario.civet'; // Match the scenario filename context
