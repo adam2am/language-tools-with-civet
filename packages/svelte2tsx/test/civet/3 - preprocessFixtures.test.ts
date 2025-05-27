@@ -4,7 +4,7 @@ import { SourceMapConsumer } from 'source-map';
 import fs from 'fs';
 import path from 'path';
 
-describe('preprocessCivet on real fixtures', () => {
+describe('3 - civet: preprocessCivet on real fixtures #happy', () => {
   it('scenario.svelte maps reactiveValue, anotherVar, and console', async () => {
     const fixturePath = path.join(__dirname, 'fixtures', 'scenario.svelte');
     const svelte = fs.readFileSync(fixturePath, 'utf8');

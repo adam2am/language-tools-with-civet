@@ -1,10 +1,10 @@
 import { strict as assert } from 'assert';
-import { compileCivet } from '../../src/svelte2tsx/utils/civetCompiler';
-import { normalizeCivetMap } from '../../src/svelte2tsx/utils/civetMapNormalizer';
+import { compileCivet } from '../../src/svelte2tsx/utils/civetMapLines';
+import { normalizeCivetMap } from '../../src/svelte2tsx/utils/civetMapToV3';
 import { SourceMapConsumer } from 'source-map';
 import type { CivetLinesSourceMap } from '../../src/svelte2tsx/utils/civetTypes';
 
-describe('normalizeCivetMap (dynamic scenarios)', () => {
+describe('2 - normalizeCivetMap = converting lines to v3 (dynamic scenarios) #happy', () => {
   interface Scenario {
     name: string;
     civetSnippet: string;

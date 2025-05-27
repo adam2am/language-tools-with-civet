@@ -12,10 +12,10 @@ import path from 'path';
 import { parse, VERSION } from 'svelte/compiler';
 import { getTopLevelImports } from './utils/tsAst';
 import { preprocessCivet } from './utils/civetPreprocessor';
-import { chainSourceMaps } from './utils/civetMapChainer';
+import { chainMaps, ChainBlock } from './utils/civetMapChainer';
 import type { EncodedSourceMap } from './utils/civetMapChainer';
 
-const svelte2tsxDebug = true;
+const svelte2tsxDebug = false;
 
 const logOptions = {
     preprocessCivetOutput: true,
@@ -275,34 +275,35 @@ export function svelte2tsx(
         };
     } else {
         str.prepend('///<reference types="svelte" />\n');
-        // Generate the base Svelte→TSX map
-        const baseMap = str.generateMap({ hires: true, source: options?.filename });
+        // Generate the base Svelte→TSX source map (class instance)
+        const rawBaseMap = str.generateMap({ hires: true, source: options?.filename });
+        // Convert to plain JSON EncodedSourceMap
+        const baseMap = JSON.parse(rawBaseMap.toString()) as EncodedSourceMap;
         // Debug: log head of baseMap mappings
         if (svelte2tsxDebug && logOptions.baseMapMappingsHead) console.log(`[svelte2tsx-index.ts] baseMap mappings head: ${baseMap.mappings.split(';').slice(0,3).join(';')}`);
-        let finalMap: EncodedSourceMap = baseMap;
+        // Collect Civet blocks for chaining
+        const blocks: ChainBlock[] = [];
         if (civetModuleInfo) {
-            // Debug: log module chaining offsets
-            if (svelte2tsxDebug && logOptions.moduleChainingOffsets) console.log(`[svelte2tsx-index.ts] chaining module map at offsets ${civetModuleInfo.tsStartInSvelteWithTs}-${civetModuleInfo.tsEndInSvelteWithTs}`);
-            finalMap = chainSourceMaps(
-                finalMap,
-                civetModuleInfo.map,
-                civetModuleInfo.tsStartInSvelteWithTs,
-                civetModuleInfo.tsEndInSvelteWithTs
-            );
-            // Debug: log head of finalMap after module chaining
-            if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining module, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
+            if (svelte2tsxDebug && logOptions.moduleChainingOffsets) console.log(`[svelte2tsx-index.ts] queueing module block map at offsets ${civetModuleInfo.tsStartInSvelteWithTs}-${civetModuleInfo.tsEndInSvelteWithTs}`);
+            blocks.push({
+                map: civetModuleInfo.map,
+                tsStart: civetModuleInfo.tsStartInSvelteWithTs,
+                tsEnd: civetModuleInfo.tsEndInSvelteWithTs
+            });
         }
         if (civetInstanceInfo) {
-            // Debug: log instance chaining offsets
-            if (svelte2tsxDebug && logOptions.instanceChainingOffsets) console.log(`[svelte2tsx-index.ts] chaining instance map at offsets ${civetInstanceInfo.tsStartInSvelteWithTs}-${civetInstanceInfo.tsEndInSvelteWithTs}`);
-            finalMap = chainSourceMaps(
-                finalMap,
-                civetInstanceInfo.map,
-                civetInstanceInfo.tsStartInSvelteWithTs,
-                civetInstanceInfo.tsEndInSvelteWithTs
-            );
-            // Debug: log head of finalMap after instance chaining
-            if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining instance, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
+            if (svelte2tsxDebug && logOptions.instanceChainingOffsets) console.log(`[svelte2tsx-index.ts] queueing instance block map at offsets ${civetInstanceInfo.tsStartInSvelteWithTs}-${civetInstanceInfo.tsEndInSvelteWithTs}`);
+            blocks.push({
+                map: civetInstanceInfo.map,
+                tsStart: civetInstanceInfo.tsStartInSvelteWithTs,
+                tsEnd: civetInstanceInfo.tsEndInSvelteWithTs
+            });
+        }
+        // Chain all blocks in one pass
+        let finalMap = baseMap;
+        if (blocks.length) {
+            finalMap = chainMaps(baseMap, blocks);
+            if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining all blocks, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
         }
         const finalTsxCode = str.toString();
         if (svelte2tsxDebug) console.log('[svelte2tsx-index.ts] Final generated TSX code:\n', finalTsxCode);

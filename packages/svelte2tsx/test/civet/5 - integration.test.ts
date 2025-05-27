@@ -14,7 +14,7 @@ const logOptions = {
   mapMissmatchDetails: true,
 };
 
-describe('svelte2tsx + Civet end-to-end', () => {
+describe('svelte2tsx + Civet end-to-end #current', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const fixtures = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
 

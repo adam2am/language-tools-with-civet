@@ -1,0 +1,52 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+when working on civet integration, crucial: 
+DO not to interupt original typescript pipeline behaviour, we do addition, extention edge-case.
+
+rate-them1-10 meaning:
+if multiple approaches, versions, options
+rate 1-10 based on
+- scalability/potential scalability
+- straightforwardness/robustness
+- bulletproof/foolproofness feature poof (how far alligning+supporting main idea/pipeline)
+- approx time (can be dealt with fast<>might take a lot of time)
+- range of pivot (how reversable/ez to go back or switch, 
+basically no cost or hard to discard changes here)
+format of output scores
+-S: (how scalable) - RB: (how robust, using best practices? solid apis etc) - FP: (how bulletproof if smth is off, how its alligned with idea, pipeline, preference), -AT: (approx effort/time) - RG: (range of change ( is it ez to switch strat/tactic here? how easy to discard changes back))
+-- Overall: (description of overall, short summary)
+
+> and then we can decide short-term and long-term moves from there
+
+
+
+
+
+
+# Way of running all the test files:
+Test commands from a root:
+
+# 0 - understand where you made changes
+all civet***.ts => related to svelte2tsx.WIndows platform.
+
+if you changed something in language-server package (ex: document)
+run >
+pnpm --filter svelte-language-server build;
+/
+if you changes svelte2tsx content >
+pnpm --filter svelte2tsx build;
+
+and then proceed with testing
+
+## lsp-test = with #civet in a name (packages/language-server/test)
+[pnpm --filter svelte-language-server test-civet]
+
+## tsx-test = with #current in a name (packages/svelte2tsx/test)
+[pnpm --filter svelte2tsx test-current]
+## tsx-happy = with #happy in a name
+[pnpm --filter svelte2tsx test-happy] = likely test thats passing 100%, showcasing the concept of the playtest
+
+

@@ -1,0 +1,13 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+in svelte2tsx testing
+test-current 
+all of the test should have #current in describe name
+if they dont = not gonna be tested. so if you create/edit/wanna test something = include this. and if wanna lazer focus test = remove #current from other test
+
+in language-server testing
+
+same thing, but with #civet
