@@ -6,14 +6,14 @@ import { decode } from '@jridgewell/sourcemap-codec';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { svelte2tsx } from '../../src/svelte2tsx';
 
-describe('8 - LazerFocus2Offset: template mapping offset analysis', () => {
+describe('8 #current - LazerFocus2Offset: template mapping offset analysis', () => {
   // Each case tests mapping for a specific invocation token; expectOffset optional
   const fixtures: Array<{ name: string; token: string; expectOffset?: number }> = [
-    { name: 'LazerFocus2-issue.svelte', token: 'funcForTest', expectOffset: -1 },
+    { name: 'LazerFocus2-issue.svelte', token: 'funcForTest', expectOffset: 0 },
     { name: 'LazerFocus2-allgood.svelte', token: 'funcForTest', expectOffset: 0 },
-    { name: 'LazerFocus2-issue2.svelte', token: 'funcForTest', expectOffset: 1 },
-    { name: 'LazerFocus2-issue3.svelte', token: 'foo2', expectOffset: 2 },
-    { name: 'LazerFocus2-issue3-nooffset.svelte', token: 'foo2', expectOffset: 1 },
+    { name: 'LazerFocus2-issue2.svelte', token: 'funcForTest', expectOffset: 0 },
+    { name: 'LazerFocus2-issue3.svelte', token: 'foo2', expectOffset: 0 },
+    { name: 'LazerFocus2-issue3-nooffset.svelte', token: 'foo2', expectOffset: 0 },
     // Edge-case fixtures: just compute and log offsets
     { name: 'complicated.svelte', token: 'sum' },
     { name: 'conditional.svelte', token: 'welcomeMessage' },

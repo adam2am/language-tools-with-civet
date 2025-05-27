@@ -86,7 +86,7 @@ ${dedentedSnippet}`);
     ms.overwrite(start, end, compiledTsCode);
 
     // Calculate line counts
-    const originalCivetLineCount = dedentedSnippet.split('\n').length;
+    const originalScriptBlockLineCount = svelte.slice(start, end).split('\n').length;
     const compiledTsLineCount = compiledTsCode.split('\n').length;
 
     const tsEndInSvelteWithTs = start + compiledTsCode.length;
@@ -95,7 +95,7 @@ ${dedentedSnippet}`);
       tsStartInSvelteWithTs: start,
       tsEndInSvelteWithTs,
       originalContentStartLine: originalContentStartLine_1based,
-      originalCivetLineCount,
+      originalCivetLineCount: originalScriptBlockLineCount,
       compiledTsLineCount
     } as CivetBlockInfo;
 
