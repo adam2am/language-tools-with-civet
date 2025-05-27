@@ -756,12 +756,22 @@ These findings underscore the trade-off between raw per-character granularity an
 
 ## Next Steps
 
-To advance our Civet support and simplify the pipeline, we will:
+# actual options
+1 - chaining with 1st (line off) figuring why its doing 1 line off
+>> [on-it] 2 - figuring lines off in a current char based distraction
+3 - tsx integration with magicstting
+>> [bootstrapping-fast] 4 - heavy lsp with proper sourcemap normalization from me check
 
-- Phase A2: Extract and encapsulate Civet compilation and map normalization into a dedicated `civet/` submodule (`compiler.ts`, `mapNormalizer.ts`, `preprocessor.ts`, `utils.ts`).
-- Refactor `index.ts` to invoke `preprocessCivet()`, generate base Svelte→TSX code, and chain Civet sourcemaps cleanly via `chainSourceMaps`.
-- Write comprehensive unit and integration tests for the new preprocessor components, verifying code output and end-to-end sourcemap accuracy.
-- Benchmark the full Svelte-to-TSX pipeline on complex components to ensure performance and reliability.
-- Investigate upstream improvements or custom utilities to better preserve Civet's raw map precision when converting to V3 format.
 
-This trajectory will lead to a robust, maintainable Civet preprocessing pipeline and seamless integration with the Svelte Language Server.
+
+
+
+
+
+
+
+
+
+
+
+

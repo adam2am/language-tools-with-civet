@@ -1,5 +1,4 @@
-import { SourceMapGenerator as ActualSourceMapGenerator } from '@jridgewell/gen-mapping';
-import type { RawSourceMap as StandardRawSourceMap } from 'source-map'; // Keep for type, gen-mapping doesn't export it
+import { SourceMapGenerator, type RawSourceMap as StandardRawSourceMap } from 'source-map';
 import type { CivetLinesSourceMap } from './civetTypes';
 // computeCharOffsetInSnippet and getLineAndColumnForOffset are not directly used in this revised function
 // as it no longer maps fully back to the Svelte file, but prepares the map for chaining.
@@ -29,17 +28,17 @@ export function convertRawCivetMapToSvelteContextFormat(
   const lazerFocusDebug = false; // Keep debug flag if needed for local testing
   if (lazerFocusDebug) console.log('[convertRawCivetMapToSvelteContextFormat] Input rawCivetMap:', JSON.stringify(rawCivetMap).substring(0, 200) + '...');
 
-  const generator = new ActualSourceMapGenerator({
-    file: svelteFilePath,
-    sourceRoot: '' // gen-mapping requires a sourceRoot, empty string is fine for our case
+  const generator = new SourceMapGenerator({
+    file: svelteFilePath // The "file" field refers to the output of this map stage (the TS snippet)
+                         // but often set to the ultimate source for easier debugging in some tools.
+                         // Or it could be null if it's purely intermediate. Let's use svelteFilePath for now.
   });
 
   // The "source" for this map's *original positions* is notionally the dedented Civet snippet.
   // However, for chaining purposes where the final map should point to the Svelte file,
   // we set the source file path here to the Svelte file.
   // The actual line/col numbers in the mappings are relative to the dedented snippet.
-  // With gen-mapping, addSource() returns the index, which we don't strictly need here as we only have one source.
-  generator.addSource(svelteFilePath, originalFullSvelteContent);
+  generator.setSourceContent(svelteFilePath, originalFullSvelteContent);
 
   let generatedLineNo_1based = 0;
   if (rawCivetMap.lines) {
@@ -79,11 +78,8 @@ export function convertRawCivetMapToSvelteContextFormat(
 
         // Map back to absolute Svelte file line by adding snippet start line
         const finalLine1 = originalContentStartLine_1based + originalLine_0based_inDedented;
-        
-        // With gen-mapping, addMapping takes an object with properties.
-        // Ensure `source` here is the svelteFilePath string, not an index (gen-mapping handles this if addSource was used prior)
         generator.addMapping({
-          source: svelteFilePath, // This must be the string path added via addSource()
+          source: svelteFilePath,
           original: {
             line: finalLine1,
             column: originalColumn_0based_inSvelteIndentedLine // Store ABSOLUTE Svelte column
@@ -98,18 +94,16 @@ export function convertRawCivetMapToSvelteContextFormat(
     });
   }
 
-  // With gen-mapping, toJSON() gives the map object directly.
   const outputMap = generator.toJSON();
   if (lazerFocusDebug) console.log('[convertRawCivetMapToSvelteContextFormat] Output Raw V3 Map:', JSON.stringify(outputMap));
 
   // Ensure sources and sourcesContent are correctly set for the final map structure
-  // gen-mapping should handle this correctly via addSource, but double-checking doesn't hurt.
-  // If they are already correct from toJSON(), these lines might be redundant but safe.
+  // even if SourceMapGenerator might infer them, explicit is better.
   outputMap.sources = [svelteFilePath];
   outputMap.sourcesContent = [originalFullSvelteContent];
   // outputMap.file = svelteFilePath; // Or could be filename of TS snippet if that were distinct
 
-  return outputMap as StandardRawSourceMap; // Cast to the type expected by the rest of the system
+  return outputMap;
 } 
 
 // Original normalizeCivetMap and its comments are removed as per the refactoring plan.

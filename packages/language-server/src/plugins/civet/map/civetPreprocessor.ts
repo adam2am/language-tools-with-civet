@@ -6,9 +6,8 @@ import { convertRawCivetMapToSvelteContextFormat } from './civetMapToV3';
 import { getAttributeValue, getActualContentStartLine, stripCommonIndent, countLeadingBlankLines } from './civetUtils';
 import type { PreprocessResult } from './civetTypes';
 import type { RawSourceMap as StandardRawSourceMap } from 'source-map';
-import { basename } from 'path';
 
-const civetPreprocessorDebug = false; // Enabled for detailed logging
+const civetPreprocessorDebug = true; // Enabled for detailed logging
 
 const logOptions = {
   snippetOffset: true,
@@ -32,13 +31,11 @@ export interface DetailedCivetBlockInfo {
     compiledTsCode: string; // The TS code generated from this Civet block
 }
 
-export type CivetProcessedResult = PreprocessResult;
-
 /**
  * Preprocess a Svelte document, compiling any <script lang="civet"> blocks
  * into TypeScript and preparing their sourcemaps for later chaining.
  */
-export function preprocessCivet(svelte: string, filename: string, opts?: { all?: boolean }): PreprocessResult {
+export function preprocessCivet(svelte: string, filename: string): PreprocessResult {
   const ms = new MagicString(svelte);
   const { tags } = parseHtmlxOriginal(svelte, parse, { emitOnTemplateError: false, svelte5Plus: true });
   const result: PreprocessResult = { code: svelte };
@@ -83,7 +80,7 @@ export function preprocessCivet(svelte: string, filename: string, opts?: { all?:
     const civetMapForChaining = convertRawCivetMapToSvelteContextFormat(
       rawCivetMapFromCompile,
       svelte, // Full original svelte content
-      basename(filename), // Use only the file name for mapping
+      filename, // Svelte file path
       adjustedStartLine, // 1-based snippet start line, adjusted for blank lines
       commonIndentRemoved // Pass the commonIndentRemoved --- Restore original
     );

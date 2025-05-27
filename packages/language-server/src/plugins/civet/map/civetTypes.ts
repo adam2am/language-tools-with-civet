@@ -54,8 +54,6 @@ export interface CivetBlockInfo {
     tsEndInSvelteWithTs: number;
     /** 1-based line number in the original Svelte file where the Civet content started */
     originalContentStartLine: number;
-    /** The common indent removed from the original snippet content */
-    commonIndentRemoved: string;
 }
 
 /**

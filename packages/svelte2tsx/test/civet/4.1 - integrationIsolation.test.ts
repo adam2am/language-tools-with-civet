@@ -43,7 +43,20 @@ describe('#current integrationIsolation: Civet preprocessing mapping only', () =
       if (preprocessed.module) blocks.push({ name: 'module', data: preprocessed.module });
       if (preprocessed.instance) blocks.push({ name: 'instance', data: preprocessed.instance });
 
-      assert.ok(blocks.length > 0, "No Civet script blocks found or processed.");
+      if (blocks.length === 0) {
+        if (svelteContent.includes('lang="civet"')) {
+          assert.fail(`File ${file} contains lang="civet" but no blocks were processed.`);
+        } else {
+          // If no lang="civet", then it's expected that no blocks are processed.
+          // Skip the rest of the test for this file.
+          console.log(`[integrationIsolation.test.ts] Skipping ${file} as it has no lang="civet" blocks.`);
+          // 'this.skip()' is for Mocha's context, which might not be directly available here.
+          // Returning is a safe way to skip the assertions for this file in this structure.
+          return;
+        }
+      }
+      // This assertion is effectively covered by the logic above now.
+      // assert.ok(blocks.length > 0, "No Civet script blocks found or processed.");
 
       for (const { data: block, name } of blocks) {
         const { map, originalContentStartLine: block_originalContentStartLine_1based, commonIndentRemoved } = block!;
