@@ -14,7 +14,11 @@ with  \n\n [ ]     so we could checkmark it  and visually see where it starts/en
 and [X] checkmark when done with a each file > @sourcemap-offset-diff.md]
 
 
+if you were give the all information you need to know to developer which files would you list, what issue would you describe
 
+full on whats going on and what we're trying to achieve and go for in general
+
+so professional developer could give full on architech desing of a roadmap?
 
 I’ve sketched out the “pre-filter + per-stream remapping + merge” refactor in chainMaps—that’s the rock-solid, 2-phase approach:
 Decode your baseMap.

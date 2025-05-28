@@ -27,13 +27,13 @@ const chainCivetDebug = true; // Debug enabled for pipeline inspection
 
 const logOptions = {
   input: true,     // log input baseMap and blocks
-  decodedBase: false,
-  tracerInit: false,
-  lineProcessing: false,
+  decodedBase: true, 
+  tracerInit: true,
+  lineProcessing: true,
   segmentTrace: true, // log each segment guard and result
-  remappedSegments: false,
-  remappedSummary: false,
-  encodedOutput: false
+  remappedSegments: true,
+  remappedSummary: true, 
+  encodedOutput: true
 };
 
 class LineOffsetCalculator {
@@ -131,7 +131,7 @@ export function chainMaps(
         const baseSegmentName = (nameIndex != null && baseMap.names[nameIndex] !== undefined)
           ? baseMap.names[nameIndex]
           : 'undefined';
-        console.log(`[chainMaps] BaseMap segment nameIndex=${nameIndex}, name=${baseSegmentName}`);
+        // console.log(`[chainMaps] BaseMap segment nameIndex=${nameIndex}, name=${baseSegmentName}`); // REVERTED
       }
       const relLine = (origLine0 + 1) - block.tsStartLineInSvelteWithTs;
       const relCol = relLine === 0
@@ -151,6 +151,12 @@ export function chainMaps(
       if (traced && traced.length >= 4) {
         // Classify segment: propagate nameIndex for identifiers (nameIndex!=null), drop for keywords
         const finalNameIndex = nameIndex != null ? nameIndex : undefined;
+
+        // REVERTED focused log for foo1
+        // if (chainCivetDebug && generatedCol === 8 && traced[2] === 1 && traced[3] === 9) {
+        //     console.log(`[chainMaps] PUSHING to remappedScript for TSX genCol ${generatedCol}: [${generatedCol}, 0, ${traced[2]}, ${traced[3]}, ${finalNameIndex === undefined ? 'undef' : finalNameIndex}]`);
+        // }
+
         remappedScript.push([generatedCol, 0, traced[2], traced[3], finalNameIndex]);
       } else {
         // Fallback: map to start of script block in original Svelte

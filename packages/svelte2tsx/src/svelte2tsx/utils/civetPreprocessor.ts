@@ -64,6 +64,13 @@ ${dedentedSnippet}`);
     if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Compiled TS code from Civet:\n${compiledTsCode}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] compileCivet output code length: ${compiledTsCode.length}, rawMap lines count: ${rawMap && 'lines' in rawMap ? rawMap.lines.length : 0}`);
 
+    if (civetPreprocessorDebug && rawMap && 'lines' in rawMap && rawMap.lines.length > 0) {
+      console.log(`[civetPreprocessor.ts] Raw Civet Map (rawMap.lines[0]) for first line of dedented snippet ("${dedentedSnippet.split('\n')[0]}") segments:`);
+      rawMap.lines[0].forEach((segment, index) => {
+        console.log(`  Segment ${index}: genCol=${segment[0]}, srcFileIndex=${segment[1]}, srcLine_0based=${segment[2]}, srcCol_0based=${segment[3]}${segment.length > 4 ? ', nameIndex='+segment[4] : ''}`);
+      });
+    }
+
     if (!rawMap || !('lines' in rawMap)) continue;
 
     // Compute line offset for snippet within the Svelte file dynamically by finding first content line
@@ -75,6 +82,12 @@ ${dedentedSnippet}`);
 
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] originalContentStartLine_1based: ${originalContentStartLine_1based}, snippet offset (0-based): ${originalCivetSnippetLineOffset_0based}`);
 
+    if (civetPreprocessorDebug) {
+        console.log(`[civetPreprocessor.ts] Inputs to normalizeCivetMap:`);
+        console.log(`  originalCivetSnippetLineOffset_0based: ${originalCivetSnippetLineOffset_0based}`);
+        console.log(`  svelteFilePath: ${filename}`);
+        console.log(`  removedCivetContentIndentLength: ${removedCivetContentIndent.length}`);
+    }
 
     // Normalize the Civet sourcemap to a standard V3 map
     const indentLength = removedCivetContentIndent.length;
