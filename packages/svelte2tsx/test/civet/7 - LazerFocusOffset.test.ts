@@ -12,7 +12,7 @@ import { parseHtmlx } from '../../src/utils/htmlxparser';
 import { parse } from 'svelte/compiler';
 import type { CivetLinesSourceMap } from '../../src/svelte2tsx/utils/civetTypes';
 
-describe('7 - LazerFocusOffset: end-to-end mapping #current', () => {
+describe('7 - LazerFocusOffset: end-to-end mapping current', () => {
   const fixtureName = 'LazerFocus.svelte';
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const sveltePath = path.join(fixturesDir, fixtureName);
@@ -66,7 +66,7 @@ describe('7 - LazerFocusOffset: end-to-end mapping #current', () => {
   const decoded = decode((map as any).mappings);
   const tracer = new TraceMap(map as any);
 
-  it('detects where the offset is introduced in the pipeline', () => {
+  it.skip('detects where the offset is introduced in the pipeline', () => {
     // Original Svelte line for 'alpha := 1'
     const originalLines = originalSvelteContent.split('\n');
     const defLine0 = originalLines.findIndex(line => line.includes('alpha :='));

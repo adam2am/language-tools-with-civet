@@ -50,3 +50,6 @@ and then proceed with testing
 [pnpm --filter svelte2tsx test-happy] = likely test thats passing 100%, showcasing the concept of the playtest
 
 
+
+=> can craft a test, can add hypothesis
+

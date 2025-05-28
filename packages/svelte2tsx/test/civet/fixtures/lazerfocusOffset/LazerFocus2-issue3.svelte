@@ -1,7 +1,7 @@
 <script lang="civet">
 	
 	abfdsfc := "hello, world"
-	line2 := "hello, world"
+	line2 := "hello, world" 
 
 	function funcForTest() 
 		console.log "hello, world"
