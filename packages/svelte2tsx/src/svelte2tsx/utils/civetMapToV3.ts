@@ -26,17 +26,7 @@ export function normalizeCivetMap(
   generator.setSourceContent(svelteFilePath, originalFullSvelteContent);
 
   // Determine the indentation of the Civet snippet within the Svelte <script> tag
-  let svelteScriptTagIndent = 0;
-  if (originalFullSvelteContent && originalCivetSnippetLineOffset_0based >= 0) {
-    const svelteLines = originalFullSvelteContent.split('\n');
-    if (originalCivetSnippetLineOffset_0based < svelteLines.length) {
-      const snippetLineInSvelte = svelteLines[originalCivetSnippetLineOffset_0based];
-      const match = snippetLineInSvelte.match(/^\s*/);
-      if (match) {
-        svelteScriptTagIndent = match[0].length;
-      }
-    }
-  }
+  const svelteContentLines = originalFullSvelteContent.split('\n');
 
   // Determine if the source snippet itself started with a newline, which would affect its internal line numbering.
   const snippetHadLeadingNewline = civetMap.source && (civetMap.source.startsWith('\n') || civetMap.source.startsWith('\r\n'));
@@ -107,7 +97,15 @@ export function normalizeCivetMap(
         const finalOriginalLine_1based_in_svelte = effective_originalLine_0based_in_snippet + originalCivetSnippetLineOffset_0based + 1;
         
         // Adjust original column to account for indentation within the Svelte script tag.
-        const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet + svelteScriptTagIndent;
+        let currentLineSvelteIndent = 0;
+        if (finalOriginalLine_1based_in_svelte -1 >= 0 && finalOriginalLine_1based_in_svelte -1 < svelteContentLines.length) {
+            const actualSvelteLineContent = svelteContentLines[finalOriginalLine_1based_in_svelte -1];
+            const match = actualSvelteLineContent.match(/^\s*/);
+            if (match) {
+                currentLineSvelteIndent = match[0].length;
+            }
+        }
+        const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet + currentLineSvelteIndent;
 
         const mappingToAdd = {
           source: svelteFilePath, // All original positions are from the .svelte file

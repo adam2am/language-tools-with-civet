@@ -6,7 +6,7 @@ import { decode } from '@jridgewell/sourcemap-codec';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { svelte2tsx } from '../../src/svelte2tsx';
 
-describe('8.1 current - OffsetTwoAtTime: braceless vs braced offset analysis #current', () => {
+describe('8.1 current - OffsetTwoAtTime: braceless vs braced offset analysis current', () => {
   const fixtures: Array<{ name: string; token: string; expectOffset?: number }> = [
     { name: 'LazerFocus2-issue3.svelte', token: 'foo2', expectOffset: 0 },       // Fixed: Should now be 0
     { name: 'LazerFocus2-issue3-nooffset.svelte', token: 'foo2', expectOffset: 0 } // Fixed: Should now be 0

@@ -266,13 +266,14 @@ export function svelte2tsx(
             .replace('<></>;', '')
             .replace('<></>;', '')
             // tsx in render function
-            .replace(/<>.*<\/>/s, '')
+            .replace(/<>.*<\/\>/s, '')
             .replace('\n() => ();', '');
 
         return {
             code
         };
     } else {
+        // Prepend the Svelte reference for TSX output
         str.prepend('///<reference types="svelte" />\n');
         // Generate the base Svelte→TSX source map (class instance)
         const rawBaseMap = str.generateMap({ hires: true, source: options?.filename });

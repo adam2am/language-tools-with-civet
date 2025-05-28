@@ -127,6 +127,12 @@ export function chainMaps(
       const [generatedCol, , origLine0, origCol0, nameIndex] = segment;
       const block = blocks[blockIndex];
       const tracer = blockTracers[blockIndex];
+      if (chainCivetDebug && logOptions.segmentTrace) {
+        const baseSegmentName = (nameIndex != null && baseMap.names[nameIndex] !== undefined)
+          ? baseMap.names[nameIndex]
+          : 'undefined';
+        console.log(`[chainMaps] BaseMap segment nameIndex=${nameIndex}, name=${baseSegmentName}`);
+      }
       const relLine = (origLine0 + 1) - block.tsStartLineInSvelteWithTs;
       const relCol = relLine === 0
         ? origCol0 - block.tsStartColInSvelteWithTs
@@ -135,8 +141,17 @@ export function chainMaps(
       try {
         traced = traceSegment(tracer, relLine, Math.max(0, relCol));
       } catch { }
+      if (chainCivetDebug && logOptions.segmentTrace) {
+        const civetNameIndex = (traced && traced.length > 4) ? traced[4] : undefined;
+        const civetName = (civetNameIndex != null && block.map.names && block.map.names[civetNameIndex] !== undefined)
+          ? block.map.names[civetNameIndex]
+          : 'undefined';
+        console.log(`[chainMaps] traceSegment returned traced=${JSON.stringify(traced)}, civetNameIndex=${civetNameIndex}, civetName=${civetName}`);
+      }
       if (traced && traced.length >= 4) {
-        remappedScript.push([generatedCol, 0, traced[2], traced[3], nameIndex]);
+        // Classify segment: propagate nameIndex for identifiers (nameIndex!=null), drop for keywords
+        const finalNameIndex = nameIndex != null ? nameIndex : undefined;
+        remappedScript.push([generatedCol, 0, traced[2], traced[3], finalNameIndex]);
       } else {
         // Fallback: map to start of script block in original Svelte
         remappedScript.push([generatedCol, 0, block.tsStartLineInSvelteWithTs - 1, 0, nameIndex]);

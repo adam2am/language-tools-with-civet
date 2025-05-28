@@ -14,12 +14,12 @@ const logOptions = {
   mapMissmatchDetails: true,
 };
 
-describe('#current svelte2tsx + Civet end-to-end current', () => {
+describe('5 - integration: svelte2tsx + Civet end-to-end current', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const fixtures = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
 
   fixtures.forEach((f) => {
-    it(`should map key tokens correctly for ${f}`, async () => {
+    it(`5 - integration: should map key tokens correctly for ${f}`, async () => {
       // debug: mark start of test for this fixture
       if (integrationDebug && logOptions.fixtureStart) {
         console.log(`\n--- Running end-to-end mapping for fixture: ${f} ---`);

@@ -6,7 +6,7 @@ import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { svelte2tsx } from '../../src/svelte2tsx';
 
 // Test suite for column offset issues on the first line of Civet script
-describe('10 - LazerFocus3ColumnShift: mapping for first line tokens #current', () => {
+describe('10 - LazerFocus3ColumnShift: mapping for first line tokens current', () => {
   const fixtures = [
     {
       name: 'LazerFocus3-issue1.svelte',
@@ -48,6 +48,7 @@ describe('10 - LazerFocus3ColumnShift: mapping for first line tokens #current', 
       const sveltePath = path.join(fixturesDir, name);
       const content = fs.readFileSync(sveltePath, 'utf-8');
       const { code: tsxCode, map } = svelte2tsx(content, { filename: name });
+      
       const tracer = new TraceMap(map as any);
 
       // Locate generated position of the token
@@ -58,6 +59,7 @@ describe('10 - LazerFocus3ColumnShift: mapping for first line tokens #current', 
       const genCol = pre.slice(pre.lastIndexOf('\n') + 1).length;
 
       const pos = originalPositionFor(tracer, { line: genLine, column: genCol });
+      
       assert.strictEqual(pos.source, name, 'Source should be the Svelte file');
 
       // Log the name from the sourcemap segment, if available
@@ -75,6 +77,24 @@ describe('10 - LazerFocus3ColumnShift: mapping for first line tokens #current', 
 
       assert.strictEqual(pos.column, expectedOriginalColumn,
         `Expected column ${expectedOriginalColumn} for '${tokenName}' in ${name}, got ${pos.column}. Line: ${pos.line}. Original line content: '${originalTokenLineContent}'`);
+
+      // Hypothesis 2: Indentation Mismatch - retest with extra leading spaces on each line
+      {
+        const indent = '  ';
+        const indentedSvelte = content.split('\n').map(line => indent + line).join('\n');
+        const { code: tsxCodeIndent, map: mapIndent } = svelte2tsx(indentedSvelte, { filename: name });
+        const tracerIndent = new TraceMap(mapIndent as any);
+        const idxIndent = tsxCodeIndent.indexOf(tokenName);
+        assert.ok(idxIndent !== -1, `Token '${tokenName}' not found in indented TSX output for ${name}`);
+        const preIndent = tsxCodeIndent.slice(0, idxIndent);
+        const genLineIndent = preIndent.split('\n').length;
+        const genColIndent = preIndent.slice(preIndent.lastIndexOf('\n') + 1).length;
+        const posIndent = originalPositionFor(tracerIndent, { line: genLineIndent, column: genColIndent });
+        assert.strictEqual(posIndent.source, name, 'Source should be the Svelte file for indented content');
+        assert.strictEqual(posIndent.column, expectedOriginalColumn,
+          `Hypothesis 2: Expected column ${expectedOriginalColumn} for indented '${tokenName}' in ${name}, got ${posIndent.column}`
+        );
+      }
     });
   }
 }); 

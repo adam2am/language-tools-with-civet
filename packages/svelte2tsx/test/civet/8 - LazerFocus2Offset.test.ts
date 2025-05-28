@@ -6,7 +6,7 @@ import { decode } from '@jridgewell/sourcemap-codec';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { svelte2tsx } from '../../src/svelte2tsx';
 
-describe('8 current - LazerFocus2Offset: template mapping offset analysis', () => {
+describe('8 - LazerFocus2Offset: template mapping offset analysis', () => {
   // Each case tests mapping for a specific invocation token; expectOffset optional
   const fixtures: Array<{ name: string; token: string; expectOffset?: number }> = [
     { name: 'LazerFocus2-issue.svelte', token: 'funcForTest', expectOffset: 0 },
