@@ -65,6 +65,8 @@ export function getSnippetOffset(
   return idx >= 0 ? idx : 0;
 } 
 
+
+
 /**
  * Strip the common leading whitespace from all non-empty lines of the snippet.
  * Returns the dedented string and the indent that was removed.

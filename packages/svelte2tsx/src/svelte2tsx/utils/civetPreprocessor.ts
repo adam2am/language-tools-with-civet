@@ -52,8 +52,9 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
     }
 
     // Dedent the trimmed snippet to strip common leading whitespace for accurate mapping
-    const { dedented: dedentedSnippet } = stripCommonIndent(snippetTrimmed);
-    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Civet snippet after dedent:
+    const { dedented: dedentedSnippet, indent: removedCivetContentIndent } = stripCommonIndent(snippetTrimmed);
+
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Civet snippet after dedent (removed indent: "${removedCivetContentIndent}"):
 ${dedentedSnippet}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] Dedented snippet content:\n${dedentedSnippet}`);
     
@@ -76,7 +77,8 @@ ${dedentedSnippet}`);
 
 
     // Normalize the Civet sourcemap to a standard V3 map
-    const map = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
+    const indentLength = removedCivetContentIndent.length;
+    const map = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename, indentLength);
     // Debug: log first segment of normalized map mappings
     if (civetPreprocessorDebug && logOptions.firstSemicolonSegment) console.log(`[civetPreprocessor.ts] normalized map first semicolon segment: ${map.mappings.split(';')[0]}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] normalizeCivetMap returned map mappings length: ${map.mappings.split(';').length}`);

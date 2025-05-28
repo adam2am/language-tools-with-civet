@@ -9,15 +9,13 @@ import type { CivetLinesSourceMap } from './civetTypes';
  * @param originalFullSvelteContent The full content of the original .svelte file.
  * @param originalCivetSnippetLineOffset_0based 0-based line number where the civet snippet started in the .svelte file.
  * @param svelteFilePath The actual file path of the .svelte file (for the output sourcemap's `sources` and `file` fields).
- * @param removedCivetContentIndentLength Length of the common indent removed from civet snippet by stripCommonIndent
  * @returns A Standard V3 RawSourceMap that maps from the original .svelte file to the compiled TS snippet.
  */
 export function normalizeCivetMap(
   civetMap: CivetLinesSourceMap,
   originalFullSvelteContent: string,
   originalCivetSnippetLineOffset_0based: number, // This offset already points to the first *actual code line* in Svelte
-  svelteFilePath: string,
-  removedCivetContentIndentLength: number // Length of the common indent removed from civet snippet by stripCommonIndent
+  svelteFilePath: string
 ): StandardRawSourceMap {
 
   const lazerFocusDebug = false;
@@ -26,6 +24,8 @@ export function normalizeCivetMap(
   // Set the source content for the .svelte file.
   // This ensures the output map refers to the full original Svelte content.
   generator.setSourceContent(svelteFilePath, originalFullSvelteContent);
+
+  // const svelteContentLines = originalFullSvelteContent.split('\n'); // Removed as no longer needed
 
   // The `civetMap.lines` array contains segments which are:
   // [generatedColumn_0based, sourceFileIndex_0based (relative to civetMap.sources if it existed), 
@@ -72,9 +72,7 @@ export function normalizeCivetMap(
         // passed to compileCivet, so rawMap's originalLine_0based_in_snippet is already correct.
         const finalOriginalLine_1based_in_svelte = originalLine_0based_in_snippet + originalCivetSnippetLineOffset_0based + 1;
         
-        // const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet; // CORRECT: Civet's originalColumn is for its line content
-        // ADJUSTED: Add back the indent that was stripped from the civet snippet content by stripCommonIndent
-        const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet + removedCivetContentIndentLength;
+        const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet; // CORRECT: Civet's originalColumn is for its line content
 
         const mappingToAdd = {
           source: svelteFilePath, // All original positions are from the .svelte file

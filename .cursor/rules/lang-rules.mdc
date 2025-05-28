@@ -55,12 +55,12 @@ and then proceed with testing
 ## lsp-test = with #civet in a name (packages/language-server/test)
 [pnpm --filter svelte-language-server test-civet]
 
-## tsx-test = with #current in a name (packages/svelte2tsx/test)
+## tsx-test/tsx-run = with #current in a name (packages/svelte2tsx/test)
 [pnpm --filter svelte2tsx test-current]
 ## tsx-happy = with #happy in a name
 [pnpm --filter svelte2tsx test-happy] = likely test thats passing 100%, showcasing the concept of the playtest
 
 
 
-=> can craft a test, can add hypothesis
+=> can craft a test, can add hypothesis and potential paths
 

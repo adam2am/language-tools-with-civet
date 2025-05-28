@@ -31,9 +31,13 @@ describe('7 - LazerFocusOffset: end-to-end mapping current', () => {
   );
   assert.ok(civetScriptTag, 'Civet script tag not found in LazerFocus.svelte');
   const rawSnippet = originalSvelteContent.slice(civetScriptTag.content.start, civetScriptTag.content.end);
-  const { dedented: dedentedSnippet, indent: removedIndent } = stripCommonIndent(rawSnippet);
+  const snippetTrimmed = rawSnippet.replace(/^(?:[ \t]*[\r\n])+/, ''); // Mimic preprocessor
+  const { dedented: dedentedSnippet, indent: removedIndent } = stripCommonIndent(snippetTrimmed);
+
   console.log('DEBUG [Step 0] rawSnippet:', JSON.stringify(rawSnippet));
+  console.log('DEBUG [Step 0] snippetTrimmed for stripCommonIndent:', JSON.stringify(snippetTrimmed));
   console.log('DEBUG [Step 0] dedentedSnippet:', JSON.stringify(dedentedSnippet));
+  console.log('DEBUG [Step 0] removedIndent length:', removedIndent.length);
 
   // Step 1: compileCivet
   const civetCompileResult = compileCivet(dedentedSnippet, fixtureName.replace('.svelte', '.civet'));
@@ -52,7 +56,7 @@ describe('7 - LazerFocusOffset: end-to-end mapping current', () => {
 
   // Step 2: normalizeCivetMap
   const offset0 = getActualContentStartLine(originalSvelteContent, civetScriptTag.content.start) - 1;
-  const normMap = normalizeCivetMap(rawMap, originalSvelteContent, offset0, fixtureName);
+  const normMap = normalizeCivetMap(rawMap, originalSvelteContent, offset0, fixtureName, removedIndent.length);
   console.log('DEBUG [Step 2] normalized mappings:', normMap.mappings);
   const decodedNorm = decode((normMap as any).mappings);
   console.log('DEBUG [Step 2] decoded normalized:', JSON.stringify(decodedNorm, null, 2));
