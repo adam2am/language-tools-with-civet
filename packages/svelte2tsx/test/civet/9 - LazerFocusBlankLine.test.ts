@@ -41,7 +41,7 @@ describe('9 - LazerFocusBlankLine: mapping with leading blank lines #current', (
       if (name === 'LazerFocus2-issue4-allgood.svelte') {
         assert.strictEqual(offset, expectOffset, `Expected offset ${expectOffset} for ${name}, got ${offset}`);
       } else {
-        assert.notStrictEqual(offset, 0, `Offset for ${name} should be non-zero (found ${offset})`);
+        assert.strictEqual(offset, expectOffset, `Expected offset ${expectOffset} for ${name}, got ${offset}`);
       }
     });
   }

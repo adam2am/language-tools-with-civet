@@ -1,11 +1,18 @@
-each diff mark as todo to ez keep track of it
 
-with  \n\n [ ]     do we could checkmark it  and visually see where it starts/ends          before the --- +++ in files assignment
 
 4o
 
-read the plan, follow the diff, we have all setup
-and [X] checkmark when done with a each file > @sourcemap-offset-diff.md 
+# phrases 
+
+## diff-format:
+[make each diff mark as todo to ez keep track of it
+
+with  \n\n [ ]     so we could checkmark it  and visually see where it starts/ends          before the --- +++ in files assignment]
+
+## follow-the-diff:
+[read the plan, follow the diff, we have all setup
+and [X] checkmark when done with a each file > @sourcemap-offset-diff.md]
+
 
 
 

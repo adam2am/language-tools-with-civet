@@ -6,8 +6,19 @@ alwaysApply: true
 when working on civet integration, crucial: 
 DO not to interupt original typescript pipeline behaviour, we do addition, extention edge-case.
 
-rate-them1-10 meaning:
-if multiple approaches, versions, options
+# phrases 
+
+## diff-checkmark:
+[make each diff mark as todo to ez keep track of it
+
+with  \n\n [ ]     so we could checkmark it  and visually see where it starts/ends          before the --- +++ in files assignment]
+
+## follow-the-diff:
+[read the plan, follow the diff, we have all setup
+and [X] checkmark when done with a each file > @sourcemap-offset-diff.md]
+
+## rate-them1-10:
+[if multiple approaches, versions, options
 rate 1-10 based on
 - scalability/potential scalability
 - straightforwardness/robustness
@@ -19,7 +30,7 @@ format of output scores
 -S: (how scalable) - RB: (how robust, using best practices? solid apis etc) - FP: (how bulletproof if smth is off, how its alligned with idea, pipeline, preference), -AT: (approx effort/time) - RG: (range of change ( is it ez to switch strat/tactic here? how easy to discard changes back))
 -- Overall: (description of overall, short summary)
 
-> and then we can decide short-term and long-term moves from there
+> and then we can decide short-term and long-term moves from there]
 
 
 

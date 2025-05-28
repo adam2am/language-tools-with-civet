@@ -6,7 +6,7 @@ import { normalizeCivetMap } from './civetMapToV3';
 import { getAttributeValue, getActualContentStartLine, stripCommonIndent } from './civetUtils';
 import type { PreprocessResult, CivetBlockInfo } from './civetTypes';
 
-const civetPreprocessorDebug = false;
+const civetPreprocessorDebug = true;
 
 const logOptions = {
   snippetOffset: true,
@@ -44,9 +44,8 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
     const end = tag.content.end;
     const snippet = svelte.slice(start, end);
     // Remove leading blank lines to avoid offset mismatches
-    const snippetTrimmed = snippet.replace(/^[ \t]*[\r\n]+/, '');
-    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Original Civet snippet before dedent:
-${snippet}`);
+    const snippetTrimmed = snippet.replace(/^(?:[ \t]*[\r\n])+/, '');
+    if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Civet snippet after trimming leading blank lines:\n${snippetTrimmed}`);
     if (civetPreprocessorDebug) {
       console.log(`[preprocessCivet] Detected <script lang="civet"> (${isModule ? 'module' : 'instance'}) at offsets ${start}-${end}`);
       console.log(`[preprocessCivet] Original snippet content:\n${snippet}`);

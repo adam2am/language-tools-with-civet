@@ -18,7 +18,7 @@ export function normalizeCivetMap(
   svelteFilePath: string
 ): StandardRawSourceMap {
 
-  const lazerFocusDebug = false;
+  const lazerFocusDebug = true;
   const generator = new SourceMapGenerator({ file: svelteFilePath });
 
   // Set the source content for the .svelte file.
@@ -40,7 +40,8 @@ export function normalizeCivetMap(
 
   // Determine if the source snippet itself started with a newline, which would affect its internal line numbering.
   const snippetHadLeadingNewline = civetMap.source && (civetMap.source.startsWith('\n') || civetMap.source.startsWith('\r\n'));
-  if (lazerFocusDebug && snippetHadLeadingNewline) console.log('[normalizeCivetMap DEBUG] Detected snippetHadLeadingNewline');
+  if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] civetMap.source content:\n${civetMap.source}`);
+  if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] snippetHadLeadingNewline: ${snippetHadLeadingNewline}`);
 
   // The `civetMap.lines` array contains segments which are:
   // [generatedColumn_0based, sourceFileIndex_0based (relative to civetMap.sources if it existed), 
