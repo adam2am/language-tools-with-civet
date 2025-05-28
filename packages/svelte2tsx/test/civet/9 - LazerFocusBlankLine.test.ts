@@ -5,10 +5,12 @@ import path from 'path';
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 import { svelte2tsx } from '../../src/svelte2tsx';
 
-describe('9 - LazerFocusBlankLine: mapping with leading blank lines #current', () => {
+describe('9 - LazerFocusBlankLine: mapping with leading blank lines current', () => {
   const fixtures = [
     { name: 'LazerFocus2-issue4-allgood.svelte', expectOffset: 0 },
-    { name: 'LazerFocus2-issue4.svelte', expectOffset: 0 /* expect broken offset */ }
+    { name: 'LazerFocus2-issue4.svelte', expectOffset: 0 },
+    { name: 'LazerFocus2-blankSpaces.svelte', expectOffset: 0 },
+    { name: 'LazerFocus2-blankTwoLines.svelte', expectOffset: 0 }
   ];
 
   for (const { name, expectOffset } of fixtures) {
