@@ -63,17 +63,7 @@ export function normalizeCivetMap(
       });
       if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] Sorted Segments for Gen Line ${generatedLine_0based + 1}:`, JSON.stringify(sortedSegments));
 
-      let lastProcessedGeneratedColumn = -1;
       sortedSegments.forEach(({ genCol: generatedColumn_0based, segment }) => {
-        if (generatedColumn_0based === lastProcessedGeneratedColumn) {
-          // We have already processed a segment for this exact generated column.
-          // Due to our sorting (earliest original position comes first for a given generated column),
-          // we stick with the first one we added for this generated column to ensure determinism
-          // and map to the most primary/earliest source location.
-          if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] Skipping segment for already processed Gen L${generatedLine_0based + 1}C${generatedColumn_0based}:`, JSON.stringify(segment));
-          return;
-        }
-
         // segment[1] is sourceFileIndex, typically 0 for single-file snippet compilation
         const originalLine_0based_in_snippet = segment[2];
         const originalColumn_0based_in_snippet = segment[3];
@@ -120,7 +110,6 @@ export function normalizeCivetMap(
           name: name
         };
         if (lazerFocusDebug) console.log(`[normalizeCivetMap DEBUG] Adding mapping for Gen L${generatedLine_0based + 1}C${generatedColumn_0based}:`, JSON.stringify(mappingToAdd));
-        lastProcessedGeneratedColumn = generatedColumn_0based; // Mark this generated column as processed.
         generator.addMapping(mappingToAdd);
       });
     });
