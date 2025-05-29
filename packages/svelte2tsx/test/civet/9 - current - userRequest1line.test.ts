@@ -187,7 +187,7 @@ describe('6 - User Reported Hover Issues #current', () => {
   });
 });
 
-describe('6 - User Reported Hover Issues (TypeScript Baseline) current', () => {
+describe('6 - User Reported Hover Issues (TypeScript Baseline) #current', () => {
   const fixtureDir = path.join(__dirname, 'fixtures');
   const rawSvelteFilePath = path.join(fixtureDir, 'twoFooUserRequest_TS.svelte');
   const svelteFilePath = normalizePath(rawSvelteFilePath);
