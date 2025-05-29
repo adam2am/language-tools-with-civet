@@ -72,7 +72,10 @@ export function svelte2tsx(
         svelteWithTs = civetResult.code;
         civetModuleInfo = civetResult.module;
         civetInstanceInfo = civetResult.instance;
-        if (svelte2tsxDebug && logOptions.preprocessCivetOutput) console.log(`[svelte2tsx-index.ts] preprocessCivet output: moduleInfo=${JSON.stringify(civetModuleInfo)}, instanceInfo=${JSON.stringify(civetInstanceInfo)}`);
+        if (svelte2tsxDebug && logOptions.preprocessCivetOutput) console.log(`[S2TSX_INDEX ${filename}] preprocessCivet output: moduleInfo=${JSON.stringify(civetModuleInfo)}, instanceInfo=${JSON.stringify(civetInstanceInfo)}`);
+        console.log(`[S2TSX_INDEX ${filename}] svelteWithTs after preprocessCivet:\n${svelteWithTs}`);
+        if (civetModuleInfo) console.log(`[S2TSX_INDEX ${filename}] Civet Module Info MAP (first 3 lines mappings): ${civetModuleInfo.map.mappings.split(';').slice(0,3).join(';')}`);
+        if (civetInstanceInfo) console.log(`[S2TSX_INDEX ${filename}] Civet Instance Info MAP (first 3 lines mappings): ${civetInstanceInfo.map.mappings.split(';').slice(0,3).join(';')}`);
     }
 
     if (svelte2tsxDebug) console.log('[svelte2tsx-index.ts] Svelte content after preprocessCivet (svelteWithTs):\n', svelteWithTs);
@@ -278,6 +281,7 @@ export function svelte2tsx(
         const rawBaseMap = str.generateMap({ hires: true, source: options?.filename });
         // Convert to plain JSON EncodedSourceMap
         const baseMap = JSON.parse(rawBaseMap.toString()) as EncodedSourceMap;
+        console.log(`[S2TSX_INDEX ${filename}] Base Svelte->TSX map (before chaining, first 3 lines mappings): ${baseMap.mappings.split(';').slice(0,3).join(';')}`);
         // Debug: log head of baseMap mappings
         if (svelte2tsxDebug && logOptions.baseMapMappingsHead) console.log(`[svelte2tsx-index.ts] baseMap mappings head: ${baseMap.mappings.split(';').slice(0,3).join(';')}`);
         // Collect Civet blocks for chaining
@@ -295,7 +299,10 @@ export function svelte2tsx(
                 tsStartColInSvelteWithTs: startCol,
                 tsEndLineInSvelteWithTs: endLine,
                 originalCivetLineCount: civetModuleInfo.originalCivetLineCount,
-                compiledTsLineCount: civetModuleInfo.compiledTsLineCount
+                compiledTsLineCount: civetModuleInfo.compiledTsLineCount,
+                originalCivetSnippetLineOffset_0based: civetModuleInfo.originalCivetSnippetLineOffset_0based,
+                removedCivetContentIndentLength: civetModuleInfo.removedCivetContentIndentLength,
+                originalContentStartLine_Svelte_1based: civetModuleInfo.originalContentStartLine
             });
         }
         if (civetInstanceInfo) {
@@ -310,22 +317,32 @@ export function svelte2tsx(
                 tsStartColInSvelteWithTs: startCol,
                 tsEndLineInSvelteWithTs: endLine,
                 originalCivetLineCount: civetInstanceInfo.originalCivetLineCount,
-                compiledTsLineCount: civetInstanceInfo.compiledTsLineCount
+                compiledTsLineCount: civetInstanceInfo.compiledTsLineCount,
+                originalCivetSnippetLineOffset_0based: civetInstanceInfo.originalCivetSnippetLineOffset_0based,
+                removedCivetContentIndentLength: civetInstanceInfo.removedCivetContentIndentLength,
+                originalContentStartLine_Svelte_1based: civetInstanceInfo.originalContentStartLine
             });
         }
 
         // Sort blocks by start character offset, crucial for cumulative delta calculation
         civetBlocksForChaining.sort((a, b) => a.tsStartCharInSvelteWithTs - b.tsStartCharInSvelteWithTs);
+        console.log(`[S2TSX_INDEX ${filename}] Civet blocks prepared for chaining (${civetBlocksForChaining.length} blocks):`);
+        civetBlocksForChaining.forEach((block, i) => {
+            console.log(`  [S2TSX_INDEX ${filename}] Block ${i}: tsStartChar=${block.tsStartCharInSvelteWithTs}, tsEndChar=${block.tsEndCharInSvelteWithTs}, tsStartLine=${block.tsStartLineInSvelteWithTs}, mapFile=${block.map.file}, mapSources=${JSON.stringify(block.map.sources)}, mapMappings(first 3 lines): ${block.map.mappings.split(';').slice(0,3).join(';')}`);
+        });
 
         // Chain all blocks in one pass
         let finalMap = baseMap;
         if (civetBlocksForChaining.length) {
+            console.log(`[S2TSX_INDEX ${filename}] Calling chainMaps with ${civetBlocksForChaining.length} blocks.`);
             // Pass originalSvelteContent (named `svelte` here) and svelteWithTs (str.original)
             finalMap = chainMaps(baseMap, civetBlocksForChaining, svelte, str.original);
             if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining all blocks, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
+            console.log(`[S2TSX_INDEX ${filename}] Final map after chainMaps (first 3 lines mappings): ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
         }
         const finalTsxCode = str.toString();
         if (svelte2tsxDebug) console.log('[svelte2tsx-index.ts] Final generated TSX code:\n', finalTsxCode);
+        console.log(`[S2TSX_INDEX ${filename}] Final generated TSX code:\n${finalTsxCode}`);
         return {
             code: finalTsxCode,
             map: finalMap,
