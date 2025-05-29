@@ -121,6 +121,16 @@ export function normalizeCivetMap(
         const finalOriginalColumn_0based_in_svelte = originalColumn_0based_in_snippet + svelteScriptTagIndent;
         console.log(`[MAP_TO_V3 ${svelteFilePath}] Gen TS L${generatedLine_0based + 1}C${generatedColumn_0based}: EffectiveOrigCivetL(0):${effective_originalLine_0based_in_snippet}, EffectiveOrigCivetCol(0):${originalColumn_0based_in_snippet} -> SvelteL(1):${finalOriginalLine_1based_in_svelte}, SvelteCol(0):${finalOriginalColumn_0based_in_svelte}`);
 
+        // **** CRITICAL DEBUG LOG ****
+        if (generatedLine_0based === 0 && generatedColumn_0based < 20) { // Log first few segments of the first generated line
+          console.log(`[MAP_TO_V3_CRITICAL_DEBUG ${svelteFilePath}] PRE-ADD_MAPPING FOR GEN L${generatedLine_0based + 1}C${generatedColumn_0based}:`);
+          console.log(`  Input originalColumn_0based_in_snippet (segment[3]): ${originalColumn_0based_in_snippet}`);
+          console.log(`  Calculated svelteScriptTagIndent: ${svelteScriptTagIndent}`);
+          console.log(`  Calculated finalOriginalLine_1based_in_svelte: ${finalOriginalLine_1based_in_svelte}`);
+          console.log(`  Calculated finalOriginalColumn_0based_in_svelte: ${finalOriginalColumn_0based_in_svelte}`);
+        }
+        // **** END CRITICAL DEBUG LOG ****
+
         const mappingToAdd = {
           source: svelteFilePath, // All original positions are from the .svelte file
           original: {

@@ -92,11 +92,11 @@ ${compiledTsCode}`);
 
     // Normalize the Civet sourcemap to a standard V3 map
     console.log(`[PREPROC_CIVET ${filename}] Normalizing Civet map. originalCivetSnippetLineOffset_0based: ${originalCivetSnippetLineOffset_0based}, filename: ${filename}`);
-    const map = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
+    const mapFromNormalize = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
     // Debug: log first segment of normalized map mappings
-    if (civetPreprocessorDebug && logOptions.firstSemicolonSegment) console.log(`[civetPreprocessor.ts] normalized map first semicolon segment: ${map.mappings.split(';')[0]}`);
-    if (civetPreprocessorDebug) console.log(`[preprocessCivet] normalizeCivetMap returned map mappings length: ${map.mappings.split(';').length}`);
-    console.log(`[PREPROC_CIVET ${filename}] Normalized Civet-Svelte map (first 3 lines of mappings): ${map.mappings.split(';').slice(0,3).join(';')}`);
+    if (civetPreprocessorDebug && logOptions.firstSemicolonSegment) console.log(`[civetPreprocessor.ts] normalized map first semicolon segment: ${mapFromNormalize.mappings.split(';')[0]}`);
+    if (civetPreprocessorDebug) console.log(`[preprocessCivet] normalizeCivetMap returned map mappings length: ${mapFromNormalize.mappings.split(';').length}`);
+    console.log(`[PREPROC_CIVET ${filename}] Normalized Civet-Svelte map (first 3 lines of mappings): ${mapFromNormalize.mappings.split(';').slice(0,3).join(';')}`);
 
     // Replace the Civet snippet with the compiled TS code (dedented)
     ms.overwrite(start, end, compiledTsCode);
@@ -107,7 +107,7 @@ ${compiledTsCode}`);
 
     const tsEndInSvelteWithTs = start + compiledTsCode.length;
     const blockData = {
-      map,
+      map: mapFromNormalize as any, // Cast to any to bypass complex type issue for now, assuming structure is EncodedSourceMap compatible
       tsStartInSvelteWithTs: start,
       tsEndInSvelteWithTs,
       originalContentStartLine: originalContentStartLine_1based,

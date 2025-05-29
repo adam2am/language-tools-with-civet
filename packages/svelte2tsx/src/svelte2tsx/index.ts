@@ -15,6 +15,7 @@ import { preprocessCivet } from './utils/civetPreprocessor';
 import { chainMaps, EnhancedChainBlock } from './utils/civetMapChainer';
 import type { EncodedSourceMap } from './utils/civetMapChainer';
 import { getLineAndColumnForOffset } from './utils/civetUtils';
+import { decode } from '@jridgewell/sourcemap-codec';
 
 const svelte2tsxDebug = false;
 
@@ -282,6 +283,37 @@ export function svelte2tsx(
         // Convert to plain JSON EncodedSourceMap
         const baseMap = JSON.parse(rawBaseMap.toString()) as EncodedSourceMap;
         console.log(`[S2TSX_INDEX ${filename}] Base Svelte->TSX map (before chaining, first 3 lines mappings): ${baseMap.mappings.split(';').slice(0,3).join(';')}`);
+        // Log specific segments for TSX Line 3 if it exists
+        const decodedBaseMapForLog = baseMap.mappings ? decode(baseMap.mappings) : undefined;
+        if (decodedBaseMapForLog && decodedBaseMapForLog.length > 2) { // TSX Line 3 is index 2
+            console.log(`[S2TSX_INDEX ${filename}] BaseMap Decoded for TSX Line 3 (all segments): ${JSON.stringify(decodedBaseMapForLog[2])}`);
+            // Try to find the segment for TSX L3C9 (0-indexed column 8 for 'f' in 'foo1' if generated at col 1)
+            // Or, more generally, column 8 if the line starts at column 0 in TSX.
+            // The test output says TSX L3C9, which is generated line index 2, generated col index 8.
+            const targetGenLine_0based = 2; // TSX Line 3
+            const targetGenCol_0based = 8; // TSX Col 9
+            if (decodedBaseMapForLog.length > targetGenLine_0based) {
+                const lineSegments = decodedBaseMapForLog[targetGenLine_0based];
+                let foundSegmentForL3C9: number[] | undefined;
+                for (const segment of lineSegments) {
+                    if (segment[0] === targetGenCol_0based) {
+                        foundSegmentForL3C9 = segment;
+                        break;
+                    }
+                    // If no exact match, take the one immediately preceding if it's the last one before target
+                    if (segment[0] < targetGenCol_0based) {
+                        foundSegmentForL3C9 = segment; // Keep updating until we pass it or find exact
+                    } else if (segment[0] > targetGenCol_0based && foundSegmentForL3C9) {
+                        break; // We've passed the target column, use the last found segment
+                    }
+                }
+                if (foundSegmentForL3C9) {
+                    console.log(`[S2TSX_INDEX ${filename}] BaseMap specific segment for TSX L${targetGenLine_0based + 1}C${targetGenCol_0based + 1} (targeting col ${targetGenCol_0based}): maps to svelteWithTs L${foundSegmentForL3C9[2] + 1}C${foundSegmentForL3C9[3] + 1} (0-indexed: L${foundSegmentForL3C9[2]}C${foundSegmentForL3C9[3]}) Segment: ${JSON.stringify(foundSegmentForL3C9)}`);
+                } else {
+                    console.log(`[S2TSX_INDEX ${filename}] BaseMap: No specific segment found for TSX L${targetGenLine_0based + 1}C${targetGenCol_0based + 1} (targeting col ${targetGenCol_0based}) on line ${targetGenLine_0based + 1}.`);
+                }
+            }
+        }
         // Debug: log head of baseMap mappings
         if (svelte2tsxDebug && logOptions.baseMapMappingsHead) console.log(`[svelte2tsx-index.ts] baseMap mappings head: ${baseMap.mappings.split(';').slice(0,3).join(';')}`);
         // Collect Civet blocks for chaining

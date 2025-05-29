@@ -87,12 +87,12 @@ export function chainMaps(
     console.log(`[CHAIN_MAPS] Initializing TraceMap for Block ${i} (Civet-TS -> Svelte). Map sources: ${JSON.stringify(block.map.sources)}, Map file: ${block.map.file}`);
     console.log(`[CHAIN_MAPS] Block ${i} map mappings (first 3 lines): ${block.map.mappings.split(';').slice(0,3).join(';')}`);
     return new TraceMap({
-      version: 3,
-      sources: block.map.sources,
-      names: block.map.names,
-      mappings: block.map.mappings,
-      file: block.map.file,
-      sourcesContent: block.map.sourcesContent
+    version: 3,
+    sources: block.map.sources,
+    names: block.map.names,
+    mappings: block.map.mappings,
+    file: block.map.file,
+    sourcesContent: block.map.sourcesContent
     });
   });
 
@@ -156,6 +156,11 @@ export function chainMaps(
 
       let traced: readonly number[] | null = null;
       try {
+        // Log the map being used by this tracer instance right before tracing critical segment
+        if (chainCivetDebug && logOptions.segmentTrace && blockIndex === 0 && relLine_0based_in_compiled_ts_snippet === 0 && relCol_0based_in_compiled_ts_snippet === 6) {
+            console.log(`[CHAIN_MAPS_CRITICAL_TRACE] Block ${blockIndex} Tracer (Normalized Civet-Svelte Map) Mappings (first 3 lines): ${block.map.mappings.split(';').slice(0,3).join(';')}`);
+            console.log(`[CHAIN_MAPS_CRITICAL_TRACE]                      Full Map (if short): ${block.map.mappings}`);
+        }
         traced = traceSegment(tracer, relLine_0based_in_compiled_ts_snippet, Math.max(0, relCol_0based_in_compiled_ts_snippet));
       } catch (e) {
         if (chainCivetDebug && logOptions.segmentTrace) console.log(`[CHAIN_MAPS]   Error during traceSegment: ${e.message}`);

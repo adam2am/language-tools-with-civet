@@ -180,6 +180,17 @@ describe('9 - User Reported Hover Issues #current', () => {
       // We expect it to be the same as our normalized svelteFilePath.
       assert.strictEqual(normalizePath(originalPos.source), svelteFilePath, `Source filename mismatch for "${svelteToken}". Expected "${svelteFilePath}", got "${normalizePath(originalPos.source)}"`);
       assert.strictEqual(originalPos.line, svelteExpectedLine, `Line mismatch for "${svelteToken}". Expected ${svelteExpectedLine}, got ${originalPos.line}. TSX L${foundTsxLine}C${foundTsxCol}`);
+      
+      // **** MISMATCH DETECTION LOG ****
+      if (originalPos.column !== svelteExpectedColumn) {
+        console.log(`[TEST_MISMATCH_ALERT] Token: "${svelteToken}"`);
+        console.log(`  TSX Position: L${foundTsxLine}C${foundTsxCol}`);
+        console.log(`  Svelte Expected: L${svelteExpectedLine}C${svelteExpectedColumn}`);
+        console.log(`  Svelte Actual (from map): L${originalPos.line}C${originalPos.column}`);
+        console.log(`  SVELTE_EXPECTED_COLUMN: ${svelteExpectedColumn}, SVELTE_ACTUAL_COLUMN: ${originalPos.column}`);
+      }
+      // ********************************
+
       assert.strictEqual(originalPos.column, svelteExpectedColumn, `Column mismatch for "${svelteToken}". Expected ${svelteExpectedColumn}, got ${originalPos.column}. TSX L${foundTsxLine}C${foundTsxCol}`);
 
       const svelteLineContent = svelteLines[originalPos.line - 1];
