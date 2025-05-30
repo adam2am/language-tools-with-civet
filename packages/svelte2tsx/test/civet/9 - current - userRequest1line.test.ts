@@ -182,16 +182,15 @@ describe('9 - User Reported Hover Issues #current', () => {
       assert.strictEqual(originalPos.line, svelteExpectedLine, `Line mismatch for "${svelteToken}". Expected ${svelteExpectedLine}, got ${originalPos.line}. TSX L${foundTsxLine}C${foundTsxCol}`);
       
       // **** MISMATCH DETECTION LOG ****
+      // Revert to original assertion logic, assuming svelteExpectedColumn is 0-indexed as per interface
       if (originalPos.column !== svelteExpectedColumn) {
         console.log(`[TEST_MISMATCH_ALERT] Token: "${svelteToken}"`);
         console.log(`  TSX Position: L${foundTsxLine}C${foundTsxCol}`);
-        console.log(`  Svelte Expected: L${svelteExpectedLine}C${svelteExpectedColumn}`);
-        console.log(`  Svelte Actual (from map): L${originalPos.line}C${originalPos.column}`);
-        console.log(`  SVELTE_EXPECTED_COLUMN: ${svelteExpectedColumn}, SVELTE_ACTUAL_COLUMN: ${originalPos.column}`);
+        console.log(`  Svelte Expected (0-indexed): L${svelteExpectedLine}C${svelteExpectedColumn}`);
+        console.log(`  Svelte Actual (from map, 0-indexed): L${originalPos.line}C${originalPos.column}`);
+        console.log(`  SVELTE_EXPECTED_COLUMN (0-indexed): ${svelteExpectedColumn}, SVELTE_ACTUAL_COLUMN (0-indexed from map): ${originalPos.column}`);
       }
-      // ********************************
-
-      assert.strictEqual(originalPos.column, svelteExpectedColumn, `Column mismatch for "${svelteToken}". Expected ${svelteExpectedColumn}, got ${originalPos.column}. TSX L${foundTsxLine}C${foundTsxCol}`);
+      assert.strictEqual(originalPos.column, svelteExpectedColumn, `Column mismatch for "${svelteToken}". Expected ${svelteExpectedColumn} (0-indexed), got ${originalPos.column} (0-indexed from map). TSX L${foundTsxLine}C${foundTsxCol}`);
 
       const svelteLineContent = svelteLines[originalPos.line - 1];
       // Use svelteToken.length for original token, or expectedMappedSvelteToken.length if provided
