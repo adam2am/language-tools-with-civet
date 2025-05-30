@@ -98,14 +98,15 @@ ${compiledTsCode}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] normalizeCivetMap returned map mappings length: ${mapFromNormalize.mappings.split(';').length}`);
     console.log(`[PREPROC_CIVET ${filename}] Normalized Civet-Svelte map (first 3 lines of mappings): ${mapFromNormalize.mappings.split(';').slice(0,3).join(';')}`);
 
-    // Replace the Civet snippet with the compiled TS code (dedented)
-    ms.overwrite(start, end, compiledTsCode);
-
-    // Calculate line counts
+    // Re-indent compiled TS code to preserve original indentation and start on a new line
+    const indentString = removedIndentString;
+    const reindentedTsCode = '\n' + compiledTsCode.split('\n').map(line => `${indentString}${line}`).join('\n') + '\n';
+    console.log(`[PREPROC_CIVET ${filename}] Reindented compiled TS code for insertion (indent: "${indentString}"):\n${reindentedTsCode}`);
+    ms.overwrite(start, end, reindentedTsCode);
     const originalScriptBlockLineCount = svelte.slice(start, end).split('\n').length;
-    const compiledTsLineCount = compiledTsCode.split('\n').length;
+    const compiledTsLineCount = reindentedTsCode.split('\n').length;
+    const tsEndInSvelteWithTs = start + reindentedTsCode.length;
 
-    const tsEndInSvelteWithTs = start + compiledTsCode.length;
     const blockData = {
       map: mapFromNormalize as any, // Cast to any to bypass complex type issue for now, assuming structure is EncodedSourceMap compatible
       tsStartInSvelteWithTs: start,

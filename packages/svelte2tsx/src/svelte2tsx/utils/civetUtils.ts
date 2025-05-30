@@ -65,6 +65,11 @@ export function getSnippetOffset(
   return idx >= 0 ? idx : 0;
 } 
 
+// Helper to normalize path separators to forward slashes for comparison
+export function normalizePath(filePath: string) {
+  return filePath.replace(/\\/g, '/');
+}
+
 /**
  * Strip the common leading whitespace from all non-empty lines of the snippet.
  * Returns the dedented string and the indent that was removed.
