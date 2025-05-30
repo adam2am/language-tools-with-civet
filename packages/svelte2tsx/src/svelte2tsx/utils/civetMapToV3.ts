@@ -9,17 +9,19 @@ import { decode } from '@jridgewell/sourcemap-codec';
  *
  * @param civetMap The CivetLinesSourceMap containing the `lines` array from `civet.compile()`.
  * @param originalFullSvelteContent The full content of the original .svelte file.
- * @param civetSnippetSvelteLineOffset 0-based line number where the civet snippet started in the .svelte file.
+ * @param originalContentStartLine_1based 1-based Svelte line where snippet starts
+ * @param removedIndentLength number of spaces stripped from snippet indent
  * @param svelteFilePath The actual file path of the .svelte file (for the output sourcemap's `sources` and `file` fields).
  * @returns A Standard V3 RawSourceMap that maps from the original .svelte file to the compiled TS snippet.
  */
 export function normalizeCivetMap(
   civetMap: CivetLinesSourceMap,
   originalFullSvelteContent: string,
-  civetSnippetSvelteLineOffset: number, // This offset already points to the first *actual code line* in Svelte
+  originalContentStartLine_1based: number, // 1-based Svelte line where snippet starts
+  removedIndentLength: number,           // number of spaces stripped from snippet indent
   svelteFilePath: string
 ): EncodedSourceMap {
-  console.log(`[MAP_TO_V3 ${svelteFilePath}] Normalizing Civet map. Snippet line offset in Svelte (0-based): ${civetSnippetSvelteLineOffset}`);
+  console.log(`[MAP_TO_V3 ${svelteFilePath}] Normalizing Civet map. Snippet line offset in Svelte (0-based): ${originalContentStartLine_1based - 1}`);
 
   // Detailed debug for our failing fixture
   if (svelteFilePath.includes('twoFooUserRequest.svelte')) {
@@ -29,8 +31,8 @@ export function normalizeCivetMap(
     console.log(`[MAP_TO_V3_DEBUG] Civet raw lines for ${svelteFilePath}: ${JSON.stringify(civetMap.lines)}`);
     // Log the corresponding Svelte file lines where the snippet resides
     const tmpSvelteLines = originalFullSvelteContent.split('\n');
-    console.log(`[MAP_TO_V3_DEBUG] Svelte snippet lines (line ${civetSnippetSvelteLineOffset + 1} to ${civetSnippetSvelteLineOffset + civetMap.lines.length}):`);
-    for (let i = civetSnippetSvelteLineOffset; i < civetSnippetSvelteLineOffset + civetMap.lines.length; i++) {
+    console.log(`[MAP_TO_V3_DEBUG] Svelte snippet lines (line ${originalContentStartLine_1based} to ${originalContentStartLine_1based + civetMap.lines.length - 1}):`);
+    for (let i = originalContentStartLine_1based - 1; i < originalContentStartLine_1based + civetMap.lines.length - 1; i++) {
       console.log(`  [Svelte L${i+1}] ${tmpSvelteLines[i]}`);
     }
   }
@@ -42,40 +44,13 @@ export function normalizeCivetMap(
   // This ensures the output map refers to the full original Svelte content.
   setSourceContent(gen, svelteFilePath, originalFullSvelteContent);
 
-  // Determine the indentation of the Civet snippet within the Svelte <script> tag
-  let svelteScriptTagIndent = 0;
-  if (originalFullSvelteContent && civetSnippetSvelteLineOffset >= 0) {
-    const svelteLines = originalFullSvelteContent.split('\n');
-    if (civetSnippetSvelteLineOffset < svelteLines.length) {
-      const snippetLineInSvelte = svelteLines[civetSnippetSvelteLineOffset];
-      const match = snippetLineInSvelte.match(/^\s*/);
-      if (match) {
-        svelteScriptTagIndent = match[0].length;
-      }
-      console.log(`[MAP_TO_V3 ${svelteFilePath}] Determined svelteScriptTagIndent: ${svelteScriptTagIndent} from Svelte line ${civetSnippetSvelteLineOffset + 1}: "${snippetLineInSvelte.slice(0,30)}..."`);
-    } else {
-      console.log(`[MAP_TO_V3 ${svelteFilePath}] Could not determine svelteScriptTagIndent: civetSnippetSvelteLineOffset (${civetSnippetSvelteLineOffset}) out of bounds for Svelte lines (${svelteLines.length})`);
-    }
-  } else {
-    console.log(`[MAP_TO_V3 ${svelteFilePath}] Could not determine svelteScriptTagIndent: originalFullSvelteContent empty or civetSnippetSvelteLineOffset negative.`);
-  }
-
-  // Determine if the source snippet itself started with a newline, which would affect its internal line numbering.
-  const snippetHadLeadingNewline = civetMap.source && (civetMap.source.startsWith('\n') || civetMap.source.startsWith('\r\n'));
-  if (lazerFocusDebug && snippetHadLeadingNewline) console.log('[normalizeCivetMap DEBUG] Detected snippetHadLeadingNewline');
-  console.log(`[MAP_TO_V3 ${svelteFilePath}] Snippet (from civetMap.source) had leading newline: ${snippetHadLeadingNewline}`);
-
   // The `civetMap.lines` array contains segments which are:
-  // [generatedColumn_0based, sourceFileIndex_0based (relative to civetMap.sources if it existed), 
-  //  originalLine_0based_in_snippet, originalColumn_0based_in_snippet, 
-  //  optional_nameIndex_0based (relative to civetMap.names if it existed)]
-  // For CivetLinesSourceMap from our logs, sourceFileIndex is 0 (referring to civetMap.source)
-  // and there's no nameIndex (segments are 4-element arrays).
+  // [generatedColumn_0based, sourceFileIndex_0based, originalLine_0based_in_snippet, originalColumn_0based_in_snippet, optional_nameIndex_0based]
 
   if (civetMap.lines) {
     civetMap.lines.forEach((lineSegments, tsLineIdx) => {
       if (!lineSegments || lineSegments.length === 0) return;
-      // Simple mapping: for each Civet segment, map directly via origCol + svelte indent
+      // Simple mapping: for each Civet segment, map directly via precomputed offsets
       let runningGenCol = 0;
       for (const seg of lineSegments) {
         if (!seg || seg.length < 4) continue;
@@ -83,10 +58,9 @@ export function normalizeCivetMap(
         const tsCol = runningGenCol;
         const snippetOrigLine = seg[2];
         const snippetOrigCol = seg[3];
-        const effectiveLine = snippetHadLeadingNewline && snippetOrigLine > 0 ? snippetOrigLine - 1 : snippetOrigLine;
-        const svelteLine0 = effectiveLine + civetSnippetSvelteLineOffset;
-        const originalLine1 = svelteLine0 + 1;
-        const originalCol0 = snippetOrigCol + svelteScriptTagIndent - 1;
+        // compute original Svelte position from preprocessor-provided offsets
+        const originalLine1 = originalContentStartLine_1based + snippetOrigLine;
+        const originalCol0  = snippetOrigCol + removedIndentLength;
         const name = seg.length >= 5 && civetMap.names ? civetMap.names[seg[4]] : undefined;
         addMapping(gen, {
           source: svelteFilePath,

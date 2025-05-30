@@ -105,8 +105,14 @@ ${compiledTsCode}`);
 
 
     // Normalize the Civet sourcemap to a standard V3 map
-    console.log(`[PREPROC_CIVET ${filename}] Normalizing Civet map. originalCivetSnippetLineOffset_0based: ${originalCivetSnippetLineOffset_0based}, filename: ${filename}`);
-    const mapFromNormalize = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
+    console.log(`[PREPROC_CIVET ${filename}] Normalizing Civet map. originalContentStartLine: ${originalContentStartLine_1based}, removedIndentLength: ${commonIndentLength}, filename: ${filename}`);
+    const mapFromNormalize = normalizeCivetMap(
+      rawMap,
+      svelte,
+      originalContentStartLine_1based,
+      commonIndentLength,
+      filename
+    );
     if (filename.includes('twoFooUserRequest.svelte')) {
         console.log(`[PREPROC_CIVET_DYN_DEBUG ${filename}] For twoFooUserRequest: Normalized map for instance script (first 3 lines): ${mapFromNormalize.mappings.split(';').slice(0,3).join(';')}`);
     }
