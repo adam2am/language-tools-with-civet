@@ -211,12 +211,27 @@ export function normalizeCivetMap(
         // (indicated by its generatedColumn_0based being greater than the gCol of the first segment, which is usually 0 for 'function'),
         // then adjust the mappingGeneratedColumn.
         // We check `i > 0` to ensure it's not the first segment in `sortedSegments` for this line.
-        if (generatedLine_0based === 0 && i > 0 && sortedSegments[0].genCol < generatedColumn_0based) {
-            mappingGeneratedColumn = generatedColumn_0based - 1;
-            // Optional: Add a log for this adjustment
-            if (svelteFilePath.includes('twoFooUserRequest.svelte')) {
-                console.log(`[MAP_TO_V3_ADJUST_GCOL ${svelteFilePath}] Adjusted generatedColumn for GenL0 token. Original gCol: ${generatedColumn_0based}, New mappingGCol: ${mappingGeneratedColumn}, Token: '${( /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(snippetLineText.slice(segment[3])) || [{toString: ()=>'N/A'}] )[0].toString()}'`);
-            }
+        // REMOVING THIS ADJUSTMENT BLOCK
+        // if (generatedLine_0based === 0 && i > 0 && sortedSegments[0].genCol < generatedColumn_0based) {
+        //     mappingGeneratedColumn = generatedColumn_0based - 1;
+        //     // Optional: Add a log for this adjustment
+        //     if (svelteFilePath.includes('twoFooUserRequest.svelte')) {
+        //         console.log(`[MAP_TO_V3_ADJUST_GCOL ${svelteFilePath}] Adjusted generatedColumn for GenL0 token. Original gCol: ${generatedColumn_0based}, New mappingGCol: ${mappingGeneratedColumn}, Token: '${( /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(snippetLineText.slice(segment[3])) || [{toString: ()=>'N/A'}] )[0].toString()}'`);
+        //     }
+        // }
+
+        if (debugTokenName) {
+          console.log(`SEG_GEN_COL ${currentSegmentGeneratedColumn_forLog}. Actual token for this specific segment: '${tokenMatch ? tokenMatch[0] : 'NO_TOKEN_MATCH_FOR_LOG'}'. Adding mapping Gen L${generatedLine_0based + 1}C${mappingGeneratedColumn} -> Svelte L${finalOriginalLine_1based_in_svelte}C${finalOriginalColumn_0based_in_svelte}`);
+        }
+
+        // ULTRA DEBUG FOR FOO1 MAPPING POINT
+        if (currentSegmentIsFoo1 && svelteFilePath.includes('twoFooUserRequest.svelte')) {
+            console.log(`[MAP_TO_V3_FOO1_PRE_ADDMAPPING ${svelteFilePath}] For foo1:
+  genLineForMap: ${generatedLine_0based + 1}
+  mappingGeneratedColumn: ${mappingGeneratedColumn} (original GCol in snippet: ${currentSegmentGeneratedColumn_forLog})
+  finalOriginalLine_0based_in_svelte: ${finalOriginalLine_1based_in_svelte - 1}
+  finalOriginalColumn_0based_in_svelte: ${finalOriginalColumn_0based_in_svelte}
+  debugTokenName: ${debugTokenName}`);
         }
 
         addMapping(gen, {
@@ -244,9 +259,10 @@ export function normalizeCivetMap(
         // The `col` for generated mapping also needs to be adjusted if it's the first line.
         for (let col = generatedColumn_0based + 1; col < nextGenCol; col++) {
           let fillMappingGeneratedColumn = col;
-          if (generatedLine_0based === 0 && i > 0 && sortedSegments[0].genCol < col) {
-            fillMappingGeneratedColumn = col - 1;
-          }
+          // REMOVING THIS ADJUSTMENT BLOCK AS WELL
+          // if (generatedLine_0based === 0 && i > 0 && sortedSegments[0].genCol < col) {
+          //   fillMappingGeneratedColumn = col - 1;
+          // }
           addMapping(gen, {
             source: svelteFilePath,
             generated: { line: generatedLine_0based + 1, column: fillMappingGeneratedColumn },

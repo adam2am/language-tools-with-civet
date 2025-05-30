@@ -23,8 +23,6 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
   const result: PreprocessResult = { code: svelte };
   console.log(`[PREPROC_CIVET ${filename}] Initializing for ${filename}`);
 
-  let accumulatedOffsetShiftFromAttrs = 0;
-
   for (const tag of tags) {
     if (tag.type !== 'Script') continue;
     const lang = getAttributeValue((tag).attributes, 'lang');

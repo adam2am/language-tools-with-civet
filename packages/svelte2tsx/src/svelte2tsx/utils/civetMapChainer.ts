@@ -148,9 +148,13 @@ export function chainMaps(
       // block.tsStartLineInSvelteWithTs is 1-based line where the <script> tag content starts in svelteWithTs
       const relLine_0based_in_compiled_ts_snippet = (origLine0_InSvelteWithTS + 1) - block.tsStartLineInSvelteWithTs;
       // block.tsStartColInSvelteWithTs is 0-based col where the <script> tag content starts in svelteWithTs
-      const relCol_0based_in_compiled_ts_snippet = relLine_0based_in_compiled_ts_snippet === 0
-        ? origCol0_InSvelteWithTS - block.tsStartColInSvelteWithTs
-        : origCol0_InSvelteWithTS;
+      // const relCol_0based_in_compiled_ts_snippet = relLine_0based_in_compiled_ts_snippet === 0
+      //   ? origCol0_InSvelteWithTS - block.tsStartColInSvelteWithTs
+      //   : origCol0_InSvelteWithTS;
+      // The tracer (normalized Civet map) expects columns relative to the dedented TS snippet.
+      // origCol0_InSvelteWithTS is the column in the svelteWithTs file (which has indent).
+      // block.removedCivetContentIndentLength is the length of the indent removed by stripCommonIndent.
+      const relCol_0based_in_compiled_ts_snippet = origCol0_InSvelteWithTS - block.removedCivetContentIndentLength;
 
       const isTwoFooFixture = block.map.file?.includes('twoFooUserRequest.svelte');
       // DYNAMIC LOG for foo1 target area in twoFooUserRequest
