@@ -57,7 +57,7 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
     const end = tag.content.end;
     const snippet = svelte.slice(start, end);
     // Remove leading blank lines to avoid offset mismatches
-    const snippetTrimmed = snippet.replace(/^[ \t]*[\r\n]+/, '');
+    const snippetTrimmed = snippet.replace(/^(?:[ \t]*[\r\n])+/, '');
     console.log(`[PREPROC_CIVET ${filename}] Original snippet from Svelte (${start}-${end}):\n${snippet}`);
     if (civetPreprocessorDebug) console.log(`[civetPreprocessor.ts] Original Civet snippet before dedent:
 ${snippet}`);
