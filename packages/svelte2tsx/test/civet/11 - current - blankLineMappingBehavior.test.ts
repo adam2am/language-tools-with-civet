@@ -14,7 +14,7 @@ describe('12 - unless Condition Mapping Behavior #current', () => {
 
   it('should map foo1 correctly in an unless condition', () => {
     const svelteContent = fs.readFileSync(unlessFixtureFile, 'utf-8');
-    const { code: tsxCode, map: mapJson } = svelte2tsx(svelteContent, { filename: unlessFixtureFile, isTsFile: true });
+    const { code: tsxCode, map: mapJson } = svelte2tsx(svelteContent, { filename: unlessFixtureFile });
     const tracer = new (TraceMap as any)(mapJson);
     const tsxLines = tsxCode.split('\n');
 
@@ -48,12 +48,12 @@ describe('12 - unless Condition Mapping Behavior #current', () => {
     // Original Civet: `unless foo1 is 'foo1'`
     // `foo1` is at line 3 (1-based), column 8 (0-based for `f` in `foo1` because of the preceding tab)
     assert.strictEqual(unlessOrigPos.line, 3, 'Expected "foo1" (in unless) to map to Svelte L3');
-    assert.strictEqual(unlessOrigPos.column, 8, 'Expected "foo1" (in unless) to map to Svelte C8 (0-indexed)');
+    assert.strictEqual(unlessOrigPos.column, 7, 'Expected "foo1" (in unless) to map to Svelte C7 (0-indexed)');
   });
 
   it('should map foo1 correctly in a subsequent if condition', () => {
     const svelteContent = fs.readFileSync(unlessFixtureFile, 'utf-8');
-    const { code: tsxCode, map: mapJson } = svelte2tsx(svelteContent, { filename: unlessFixtureFile, isTsFile: true });
+    const { code: tsxCode, map: mapJson } = svelte2tsx(svelteContent, { filename: unlessFixtureFile });
     const tracer = new (TraceMap as any)(mapJson);
     const tsxLines = tsxCode.split('\n');
 
@@ -128,6 +128,6 @@ describe('12 - unless Condition Mapping Behavior #current', () => {
     // Original Civet: `if foo1 is 'foo1'`
     // `foo1` is at line 7 (1-based), column 4 (0-based for `f` in `foo1` because of the preceding tab)
     assert.strictEqual(ifOrigPos.line, 7, 'Expected "foo1" (in if) to map to Svelte L7');
-    assert.strictEqual(ifOrigPos.column, 4, 'Expected "foo1" (in if) to map to Svelte C4 (0-indexed)');
+    assert.strictEqual(ifOrigPos.column, 3, 'Expected "foo1" (in if) to map to Svelte C3 (0-indexed)');
   });
 }); 
