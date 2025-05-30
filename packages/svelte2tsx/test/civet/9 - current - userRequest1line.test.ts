@@ -24,6 +24,7 @@ interface TokenToVerify {
   tsxExactMatch?: string; // Exact string to find in TSX (if svelteToken is different or for precision)
   occurrenceInTsx?: number; // 1-based
   isRegex?: boolean; 
+  checkCharacterMappings?: boolean; // If true, check mapping for each char of the token
 }
 
 describe('9 - User Reported Hover Issues #current', () => {
@@ -60,20 +61,45 @@ describe('9 - User Reported Hover Issues #current', () => {
         svelteToken: 'foo1',
         svelteExpectedLine: 2, 
         svelteExpectedColumn: 10, // 'f' in Svelte 'foo1'
-        expectedMappedSvelteToken: 'foo1', // Expect 'foo1'
-        tsxExactMatch: 'function foo1()' // Test finds 'foo1' in this, gets TSX pos for 'f'
+        expectedMappedSvelteToken: 'foo1',
+        tsxExactMatch: 'function foo1()',
+        checkCharacterMappings: true
       },
       {
         svelteToken: 'function',
         svelteExpectedLine: 2, // Line in Svelte file (1-based)
         svelteExpectedColumn: 1, // Column in Svelte file (0-based, after tab: \tfunction)
-        tsxExactMatch: 'function foo1()' // Helps find the correct TSX line and context
-        // expectedMappedSvelteToken should be 'function' by default
+        tsxExactMatch: 'function foo1()',
+        checkCharacterMappings: true
+      },
+      {
+        svelteToken: 'kekw',
+        svelteExpectedLine: 3,
+        svelteExpectedColumn: 2, // first 'k' in '\t\tkekw'
+        expectedMappedSvelteToken: 'kekw',
+        tsxExactMatch: 'const kekw =',
+        checkCharacterMappings: true
+      },
+      {
+        svelteToken: 'foo2',
+        svelteExpectedLine: 5,
+        svelteExpectedColumn: 10, // 'f' in '\tfunction foo2'
+        expectedMappedSvelteToken: 'foo2',
+        tsxExactMatch: 'function foo2',
+        checkCharacterMappings: true
+      },
+      {
+        svelteToken: 'bar',
+        svelteExpectedLine: 6,
+        svelteExpectedColumn: 2, // first 'b' in '\t\tbar'
+        expectedMappedSvelteToken: 'bar',
+        tsxExactMatch: 'const bar = 123',
+        checkCharacterMappings: true
       }
     ];
 
     for (const tokenTest of tokensToVerify) {
-      const { svelteToken, svelteExpectedLine, svelteExpectedColumn, expectedMappedSvelteToken, tsxTargetHint, tsxExactMatch, occurrenceInTsx = 1 } = tokenTest;
+      const { svelteToken, svelteExpectedLine, svelteExpectedColumn, expectedMappedSvelteToken, tsxTargetHint, tsxExactMatch, occurrenceInTsx = 1, checkCharacterMappings } = tokenTest;
       let foundTsxLine = -1;
       let foundTsxCol = -1;
       let matchCount = 0;
@@ -179,34 +205,64 @@ describe('9 - User Reported Hover Issues #current', () => {
       // originalPos.source should be the path from the sourcemap's "sources" array.
       // We expect it to be the same as our normalized svelteFilePath.
       assert.strictEqual(normalizePath(originalPos.source), svelteFilePath, `Source filename mismatch for "${svelteToken}". Expected "${svelteFilePath}", got "${normalizePath(originalPos.source)}"`);
-      assert.strictEqual(originalPos.line, svelteExpectedLine, `Line mismatch for "${svelteToken}". Expected ${svelteExpectedLine}, got ${originalPos.line}. TSX L${foundTsxLine}C${foundTsxCol}`);
       
-      // **** MISMATCH DETECTION LOG ****
-      // Revert to original assertion logic, assuming svelteExpectedColumn is 0-indexed as per interface
+      // **** Initial check for the start of the token ****
+      assert.strictEqual(originalPos.line, svelteExpectedLine, `Line mismatch for START of "${svelteToken}". Expected ${svelteExpectedLine}, got ${originalPos.line}. TSX L${foundTsxLine}C${foundTsxCol}`);
       if (originalPos.column !== svelteExpectedColumn) {
-        console.log(`[TEST_MISMATCH_ALERT] Token: "${svelteToken}"`);
+        console.log(`[TEST_MISMATCH_ALERT_START] Token: "${svelteToken}"`);
         console.log(`  TSX Position: L${foundTsxLine}C${foundTsxCol}`);
-        console.log(`  Svelte Expected (0-indexed): L${svelteExpectedLine}C${svelteExpectedColumn}`);
-        console.log(`  Svelte Actual (from map, 0-indexed): L${originalPos.line}C${originalPos.column}`);
-        console.log(`  SVELTE_EXPECTED_COLUMN (0-indexed): ${svelteExpectedColumn}, SVELTE_ACTUAL_COLUMN (0-indexed from map): ${originalPos.column}`);
+        console.log(`  Svelte Expected Start (0-indexed): L${svelteExpectedLine}C${svelteExpectedColumn}`);
+        console.log(`  Svelte Actual Start (from map, 0-indexed): L${originalPos.line}C${originalPos.column}`);
       }
-      assert.strictEqual(originalPos.column, svelteExpectedColumn, `Column mismatch for "${svelteToken}". Expected ${svelteExpectedColumn} (0-indexed), got ${originalPos.column} (0-indexed from map). TSX L${foundTsxLine}C${foundTsxCol}`);
+      assert.strictEqual(originalPos.column, svelteExpectedColumn, `Column mismatch for START of "${svelteToken}". Expected ${svelteExpectedColumn} (0-indexed), got ${originalPos.column} (0-indexed from map). TSX L${foundTsxLine}C${foundTsxCol}`);
 
-      const svelteLineContent = svelteLines[originalPos.line - 1];
-      // Use svelteToken.length for original token, or expectedMappedSvelteToken.length if provided
-      // Use svelteToken.length because that's what the original check was doing. 
-      // The expectedMappedSvelteToken is the *result* of substringing with svelteToken.length at the (potentially offset) column.
-      const mappedSvelteToken = svelteLineContent.substring(originalPos.column, originalPos.column + svelteToken.length);
+      // **** Check content based on svelteToken.length (legacy check) ****
+      const svelteLineContentForFullToken = svelteLines[svelteExpectedLine - 1];
+      const mappedSvelteTokenContent = svelteLineContentForFullToken.substring(svelteExpectedColumn, svelteExpectedColumn + svelteToken.length);
+      const expectedContent = tokenTest.expectedMappedSvelteToken || svelteToken;
       
-      // if (svelteToken === 'foo1') { // No longer asserting buggy behavior
-      //   const expectedBuggyContent = svelteLineContent.substring(originalPos.column, originalPos.column + svelteToken.length);
-      //   assert.strictEqual(mappedSvelteToken, expectedBuggyContent, `Mapped Svelte content for buggy \"${svelteToken}\" should be consistent. Expected \"${expectedBuggyContent}\", got \"${mappedSvelteToken}\"`);
-      // } else if (!tokenTest.isRegex) { 
-      if (!tokenTest.isRegex) { // Standard content check
-        const expectedContent = tokenTest.expectedMappedSvelteToken || svelteToken;
-        assert.strictEqual(mappedSvelteToken, expectedContent, `Mapped Svelte content for \"${svelteToken}\" does not match. Expected \"${expectedContent}\", got \"${mappedSvelteToken}\" from Svelte line: \"${svelteLineContent}\"`);
+      if (mappedSvelteTokenContent !== expectedContent && !tokenTest.isRegex) {
+          console.log(`[TEST_CONTENT_MISMATCH_ALERT] Token: "${svelteToken}"`);
+          console.log(`  Svelte Expected Content: "${expectedContent}" (at L${svelteExpectedLine}C${svelteExpectedColumn} length ${svelteToken.length})`);
+          console.log(`  Svelte Actual Content (from substring): "${mappedSvelteTokenContent}"`);
+          console.log(`  Full Svelte line ${svelteExpectedLine}: "${svelteLineContentForFullToken}"`);
       }
-      console.log(`[Test] PASSED: \"${svelteToken}\" (TSX L${foundTsxLine}C${foundTsxCol}) correctly maps to Svelte L${originalPos.line}C${originalPos.column} (\"${mappedSvelteToken}\")`);
+      assert.strictEqual(mappedSvelteTokenContent, expectedContent, `Mapped Svelte content for "${svelteToken}" does not match. Expected "${expectedContent}", got "${mappedSvelteTokenContent}"`);
+      
+      console.log(`[Test] PASSED (Start Pos & Full Content): "${svelteToken}" (TSX L${foundTsxLine}C${foundTsxCol}) correctly maps to Svelte L${svelteExpectedLine}C${svelteExpectedColumn} ("${mappedSvelteTokenContent}")`);
+
+      // **** Character-by-character mapping check ****
+      if (checkCharacterMappings) {
+        console.log(`[Test] Performing character-by-character mapping for "${svelteToken}"...`);
+        for (let i = 0; i < svelteToken.length; i++) {
+          const charToTest = svelteToken[i];
+          const tsxCharColumn = foundTsxCol + i;
+          const svelteExpectedCharColumn = svelteExpectedColumn + i;
+
+          console.log(`  [CharTest] '${charToTest}' (idx ${i}): TSX L${foundTsxLine}C${tsxCharColumn} -> Svelte L${svelteExpectedLine}C${svelteExpectedCharColumn}`);
+
+          const posForChar = originalPositionFor(tracer, { line: foundTsxLine, column: tsxCharColumn });
+
+          assert.ok(posForChar, `originalPositionFor returned null for char '${charToTest}' (idx ${i} of "${svelteToken}") at TSX L${foundTsxLine}C${tsxCharColumn}`);
+          assert.strictEqual(normalizePath(posForChar.source), svelteFilePath, `Source filename mismatch for char '${charToTest}' (idx ${i} of "${svelteToken}"). Expected "${svelteFilePath}", got "${normalizePath(posForChar.source)}"`);
+          
+          if (posForChar.line !== svelteExpectedLine || posForChar.column !== svelteExpectedCharColumn) {
+            console.log(`    [CHAR_MAP_MISMATCH_ALERT] Token: "${svelteToken}", Char: '${charToTest}' (idx ${i})`);
+            console.log(`      TSX Position: L${foundTsxLine}C${tsxCharColumn}`);
+            console.log(`      Svelte Expected: L${svelteExpectedLine}C${svelteExpectedCharColumn}`);
+            console.log(`      Svelte Actual:   L${posForChar.line}C${posForChar.column}`);
+            const actualCharInSvelte = svelteLines[posForChar.line - 1] ? svelteLines[posForChar.line - 1][posForChar.column] : "INVALID_LINE";
+            console.log(`      Expected Svelte Char: '${charToTest}', Actual char at mapped Svelte pos: '${actualCharInSvelte}'`);
+          }
+          assert.strictEqual(posForChar.line, svelteExpectedLine, `Line mismatch for char '${charToTest}' (idx ${i} of "${svelteToken}"). Expected ${svelteExpectedLine}, got ${posForChar.line}. TSX L${foundTsxLine}C${tsxCharColumn}`);
+          assert.strictEqual(posForChar.column, svelteExpectedCharColumn, `Column mismatch for char '${charToTest}' (idx ${i} of "${svelteToken}"). Expected ${svelteExpectedCharColumn}, got ${posForChar.column}. TSX L${foundTsxLine}C${tsxCharColumn}`);
+          
+          const svelteCharLineContent = svelteLines[posForChar.line - 1];
+          const actualSvelteChar = svelteCharLineContent ? svelteCharLineContent[posForChar.column] : undefined;
+          assert.strictEqual(actualSvelteChar, charToTest, `Svelte char content mismatch for '${charToTest}' (idx ${i} of "${svelteToken}"). Expected '${charToTest}', got '${actualSvelteChar}' at Svelte L${posForChar.line}C${posForChar.column}`);
+        }
+        console.log(`  [CharTest] PASSED character-by-character mapping for "${svelteToken}".`);
+      }
     }
   });
 });

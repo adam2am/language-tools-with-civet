@@ -61,6 +61,9 @@ export function normalizeCivetMap(
       if (!lineSegments || lineSegments.length === 0) return;
       console.log(`\n[MAP_TO_V3 ${svelteFilePath}] Processing Generated TS Line (0-based): ${generatedLine_0based} (1-based: ${generatedLine_0based + 1})`);
 
+      // Log raw segments for this generated line BEFORE any processing
+      console.log(`[MAP_TO_V3_RAW_SEGMENTS ${svelteFilePath}] GenLine ${generatedLine_0based + 1}: Raw input segments from civetMap.lines: ${JSON.stringify(lineSegments)}`);
+
       if (lazerFocusDebug) console.log(`\n[normalizeCivetMap DEBUG] Processing Generated Line: ${generatedLine_0based + 1}`);
 
       // Convert Civet's delta-based generated column entries to absolute columns
@@ -102,7 +105,7 @@ export function normalizeCivetMap(
         const name = (segment.length >= 5 && civetMap.names && typeof segment[4] === 'number') 
                      ? civetMap.names[segment[4]] 
                      : undefined;
-        console.log(`[MAP_TO_V3 ${svelteFilePath}] Gen TS L${generatedLine_0based + 1}C${generatedColumn_0based}: Raw Civet seg: [genColDelta:${segment[0]}, srcIdx:${segment[1]}, origLineInCivet:${segment[2]}, origColInCivet:${segment[3]}${name ? ', nameIdx:'+segment[4] : ''}]`);
+        console.log(`[MAP_TO_V3 ${svelteFilePath}] Gen TS L${generatedLine_0based + 1}C${generatedColumn_0based} (abs): Civet seg [genColDelta:${segment[0]} (raw), srcIdx:${segment[1]}, origLineInCivet:${originalLine_0based_in_snippet}, origColInCivet:${originalColumn_0based_in_snippet}${name ? ', nameIdx:'+segment[4]+'('+name+')' : ''}]`);
 
         let effective_originalLine_0based_in_snippet = originalLine_0based_in_snippet;
         if (snippetHadLeadingNewline) {
@@ -123,13 +126,10 @@ export function normalizeCivetMap(
 
         // **** CRITICAL DEBUG LOG ****
         let adjustedFinalOriginalColumn = finalOriginalColumn_0based_in_svelte;
-        // Experimental adjustment: if it's the known problematic token 'foo1' based on typical position
-        // This is a HACK to test the hypothesis that 'foo1' mapping is off by +1
-        if (svelteFilePath.includes('twoFooUserRequest.svelte') && 
-            originalLine_0based_in_snippet === 0 && 
-            originalColumn_0based_in_snippet === 8 && // 'f' in foo1 in "function foo1..."
-            generatedLine_0based === 0) { // Assuming foo1 is on the first line of generated TS
-            console.log(`[MAP_TO_V3_HACK_ADJUST ${svelteFilePath}] Applying +1 to column for foo1. Original calculated: ${finalOriginalColumn_0based_in_svelte}`);
+        // General adjustment: only apply to tokens on the first line of the Civet snippet
+        // when Civet's original column is > 0 (Civet appears off by -1 for first-line tokens).
+        if (originalLine_0based_in_snippet === 0 && originalColumn_0based_in_snippet > 0) {
+            console.log(`[MAP_TO_V3_GENERAL_ADJUST ${svelteFilePath}] First-line token adjustment: Original Civet col: ${originalColumn_0based_in_snippet}, Initial Svelte col: ${finalOriginalColumn_0based_in_svelte}`);
             adjustedFinalOriginalColumn = finalOriginalColumn_0based_in_svelte + 1;
         }
 
