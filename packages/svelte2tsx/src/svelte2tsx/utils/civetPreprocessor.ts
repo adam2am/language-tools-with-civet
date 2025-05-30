@@ -23,6 +23,8 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
   const result: PreprocessResult = { code: svelte };
   console.log(`[PREPROC_CIVET ${filename}] Initializing for ${filename}`);
 
+  let accumulatedOffsetShiftFromAttrs = 0;
+
   for (const tag of tags) {
     if (tag.type !== 'Script') continue;
     const lang = getAttributeValue((tag).attributes, 'lang');
@@ -34,15 +36,26 @@ export function preprocessCivet(svelte: string, filename: string): PreprocessRes
 
     // Change lang="civet" to lang="ts"
     const langAttributeNode = tag.attributes.find(attr => attr.name === 'lang' && attr.value !== true);
+    let currentTagAttributeOffsetShift = 0;
     if (langAttributeNode && Array.isArray(langAttributeNode.value) && langAttributeNode.value.length > 0) {
         const langValueNode = langAttributeNode.value[0]; // This is a Text node
-        // langValueNode.start is the offset of the opening quote of the attribute value
-        // langValueNode.end is the offset *after* the closing quote of the attribute value
-        // We overwrite the content within the quotes.
-        ms.overwrite(langValueNode.start + 1, langValueNode.end - 1, 'ts');
+        const originalLangValue = svelte.slice(langValueNode.start + 1, langValueNode.end - 1);
+        const newLangValue = 'ts';
+        if (originalLangValue !== newLangValue) {
+            ms.overwrite(langValueNode.start + 1, langValueNode.end - 1, newLangValue);
+            currentTagAttributeOffsetShift = newLangValue.length - originalLangValue.length;
+            // We assume only one script tag modification for now, or that shifts are self-contained if multiple.
+            // If processing multiple script tags and overwrites affect subsequent tag.content.start values from the *original* string,
+            // this needs to be an accumulating shift. For now, assume `tag.content.start` is always from original `svelte` string.
+            // Let's assume MagicString handles `tag.content.start` correctly for subsequent `ms.overwrite`
+            // and this `accumulatedOffsetShiftFromAttrs` is for calculating `actualTsCodeStartOffset` based on `tag.content.start`.
+            // So, for *this* tag, the content will effectively start at `tag.content.start + currentTagAttributeOffsetShift`
+            // if `tag.content.start` is AFTER `langValueNode.end`.
+            // The `tag.content.start` IS after `langValueNode.end`.
+        }
     }
 
-    const start = tag.content.start;
+    const start = tag.content.start; // Offset in the *original* svelte string.
     const end = tag.content.end;
     const snippet = svelte.slice(start, end);
     // Remove leading blank lines to avoid offset mismatches
@@ -83,6 +96,9 @@ ${compiledTsCode}`);
     const originalContentStartLine_1based = getActualContentStartLine(svelte, start);
     const originalCivetSnippetLineOffset_0based = originalContentStartLine_1based - 1;
     // Debug: log snippet offset to Svelte line mapping
+    if (filename.includes('twoFooUserRequest.svelte')) {
+        console.log(`[PREPROC_CIVET_DYN_DEBUG ${filename}] For twoFooUserRequest: originalContentStartLine_1based=${originalContentStartLine_1based}, originalCivetSnippetLineOffset_0based=${originalCivetSnippetLineOffset_0based}`);
+    }
     console.log(`[PREPROC_CIVET ${filename}] Original content start in Svelte: line ${originalContentStartLine_1based} (0-based offset: ${originalCivetSnippetLineOffset_0based})`);
 
     if (civetPreprocessorDebug && logOptions.snippetOffset) console.log(`[preprocessCivet] Civet snippet offsets ${start}-${end} -> Svelte line ${originalContentStartLine_1based}`);
@@ -93,6 +109,9 @@ ${compiledTsCode}`);
     // Normalize the Civet sourcemap to a standard V3 map
     console.log(`[PREPROC_CIVET ${filename}] Normalizing Civet map. originalCivetSnippetLineOffset_0based: ${originalCivetSnippetLineOffset_0based}, filename: ${filename}`);
     const mapFromNormalize = normalizeCivetMap(rawMap, svelte, originalCivetSnippetLineOffset_0based, filename);
+    if (filename.includes('twoFooUserRequest.svelte')) {
+        console.log(`[PREPROC_CIVET_DYN_DEBUG ${filename}] For twoFooUserRequest: Normalized map for instance script (first 3 lines): ${mapFromNormalize.mappings.split(';').slice(0,3).join(';')}`);
+    }
     // Debug: log first segment of normalized map mappings
     if (civetPreprocessorDebug && logOptions.firstSemicolonSegment) console.log(`[civetPreprocessor.ts] normalized map first semicolon segment: ${mapFromNormalize.mappings.split(';')[0]}`);
     if (civetPreprocessorDebug) console.log(`[preprocessCivet] normalizeCivetMap returned map mappings length: ${mapFromNormalize.mappings.split(';').length}`);
@@ -106,11 +125,21 @@ ${compiledTsCode}`);
     ms.overwrite(start, end, reindentedTsCode);
     const originalScriptBlockLineCount = svelte.slice(start, end).split('\n').length;
     const compiledTsLineCount = reindentedTsCode.split('\n').length;
-    const tsEndInSvelteWithTs = start + reindentedTsCode.length;
+    const tsEndInSvelteWithTs = start + currentTagAttributeOffsetShift + reindentedTsCode.length; // Adjusted for attribute shift too for end
+
+    // actualTsCodeStartOffset needs to be the offset in the *final string* (svelteWithTs)
+    // where the TS code (after the \\n and indent added by reindentedTsCode) begins.
+    // `start` is the offset of the original script content (e.g. the \\n before \\tfunction) in the *original* svelte string.
+    // After attributes like lang="civet" are changed to lang="ts", this `start` position shifts.
+    // The `ms.overwrite(start, end, reindentedTsCode)` uses this original `start` and MagicString handles the shift.
+    // So, the `reindentedTsCode` (which starts with \\n then indent) is placed at `start + currentTagAttributeOffsetShift`.
+    // The actual code within reindentedTsCode begins after its leading '\\n' and its indent.
+    const effectiveContentStartInFinalString = start + currentTagAttributeOffsetShift;
+    const actualTsCodeStartOffset = effectiveContentStartInFinalString + 1 + commonIndentLength;
 
     const blockData = {
       map: mapFromNormalize as any, // Cast to any to bypass complex type issue for now, assuming structure is EncodedSourceMap compatible
-      tsStartInSvelteWithTs: start,
+      tsStartInSvelteWithTs: actualTsCodeStartOffset,
       tsEndInSvelteWithTs,
       originalContentStartLine: originalContentStartLine_1based,
       originalCivetLineCount: originalScriptBlockLineCount,

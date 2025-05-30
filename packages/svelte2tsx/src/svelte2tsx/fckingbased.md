@@ -134,4 +134,32 @@ Achieve accurate sourcemap generation for Civet code within Svelte components, e
     *   The "Adjust column by parsing original line" (proposal 3) is essentially what's needed for the robust fix in point (2) above.
 
 The immediate goal is to replace the hack with a principled correction in `normalizeCivetMap`'s column calculation.
+
+## 7. Implementation Plan
+
+### Phase 1: Precise Column Calculation
+- File: `packages/svelte2tsx/src/svelte2tsx/utils/civetMapToV3.ts`
+- Task: In `normalizeCivetMap`, retrieve the original Svelte line from `originalFullSvelteContent.split('\n')[lineIndex]` and compute the exact token start via `lineString.indexOf(token, svelteScriptTagIndent)`, then override `finalOriginalColumn_0based_in_svelte` with that value.
+- Add a unit test to verify start positions for `foo1`, `function`, and other tokens.
+
+### Phase 2: Emit Per-Character Mappings
+- File: `packages/svelte2tsx/src/svelte2tsx/utils/civetMapToV3.ts`
+- Task: After adding the mapping for each segment's start, fill the gap by looping from `generatedColumn` to the next sorted segment's `generatedColumn` and calling `generator.addMapping` for each column, ensuring contiguous coverage so no hover gaps remain.
+
+### Phase 3: Remove Temporary Hacks & Debug Logs
+- Files:
+  - `civetMapToV3.ts` (remove the fixture-specific `+1` hack and `[MAP_TO_V3_DEBUG]` blocks)
+  - `index.ts` (remove `[S2TSX_DEBUG]` for `twoFooUserRequest.svelte`)
+- Task: Clean out all hard-coded adjustments and excessive logging, leaving only controlled debug flags.
+
+### Phase 4: Full Test Run & Verification
+- Directory: `packages/svelte2tsx/test/civet`
+- Command: `pnpm --filter svelte2tsx test-current`
+- Task: Ensure the hover mapping tests for `twoFooUserRequest.svelte` and any similar fixtures pass without hacks.
+
+### Phase 5: Documentation & Cleanup
+- Files:
+  - `packages/svelte2tsx/src/svelte2tsx/fckingbased.md` (finalize this plan)
+  - `packages/svelte2tsx/src/svelte2tsx/sourcemap-offset-refactor.md` (move summary there)
+- Task: Update README or developer docs to describe the new mapping strategy and remove obsolete fixtures.
 ```

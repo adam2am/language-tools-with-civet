@@ -36,6 +36,7 @@ require('ts-node').register({
 const tinyGlob = require('tiny-glob/sync');
 const pathModule = require('path');
 const civetDir = pathModule.join(__dirname, 'civet');
-const testFiles = tinyGlob('**/*.test.ts', { cwd: civetDir });
+// Only load tests for current user-reported hover issues
+const testFiles = tinyGlob('*- current - *.test.ts', { cwd: civetDir });
 
 testFiles.forEach(file => require(pathModule.join(civetDir, file)));

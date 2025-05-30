@@ -73,6 +73,13 @@ export function svelte2tsx(
         svelteWithTs = civetResult.code;
         civetModuleInfo = civetResult.module;
         civetInstanceInfo = civetResult.instance;
+        // Debug specific fixture
+        if (filename.includes('twoFooUserRequest.svelte')) {
+            console.log(`[S2TSX_DEBUG] After preprocessCivet for ${filename}: ts code snippet:\n${svelteWithTs}`);
+            if (civetInstanceInfo && civetInstanceInfo.map && 'lines' in civetInstanceInfo.map) {
+                console.log(`[S2TSX_DEBUG] Civet instance rawMap lines: ${JSON.stringify((civetInstanceInfo.map as any).lines)}`);
+            }
+        }
         if (svelte2tsxDebug && logOptions.preprocessCivetOutput) console.log(`[S2TSX_INDEX ${filename}] preprocessCivet output: moduleInfo=${JSON.stringify(civetModuleInfo)}, instanceInfo=${JSON.stringify(civetInstanceInfo)}`);
         console.log(`[S2TSX_INDEX ${filename}] svelteWithTs after preprocessCivet:\n${svelteWithTs}`);
         if (civetModuleInfo) console.log(`[S2TSX_INDEX ${filename}] Civet Module Info MAP (first 3 lines mappings): ${civetModuleInfo.map.mappings.split(';').slice(0,3).join(';')}`);
@@ -338,7 +345,27 @@ export function svelte2tsx(
             });
         }
         if (civetInstanceInfo) {
-            if (svelte2tsxDebug && logOptions.instanceChainingOffsets) console.log(`[svelte2tsx-index.ts] queueing instance block map at offsets ${civetInstanceInfo.tsStartInSvelteWithTs}-${civetInstanceInfo.tsEndInSvelteWithTs}`);
+            // DETAILED LOGGING MOVED HERE
+            if (filename.includes('twoFooUserRequest.svelte')) {
+                const offset = civetInstanceInfo.tsStartInSvelteWithTs;
+                console.log(`[S2TSX_INDEX_GETLINECOL_DEBUG ${filename}] For Civet Instance Block (twoFooUserRequest):`);
+                console.log(`  civetInstanceInfo.tsStartInSvelteWithTs (offset): ${offset}`);
+                console.log(`  svelteWithTs char at offset: "${svelteWithTs[offset]}"`);
+                console.log(`  svelteWithTs snippet around offset: "${svelteWithTs.slice(Math.max(0, offset - 10), offset + 10)}"`);
+                let lastNewline = -1;
+                for (let j = 0; j < Math.min(offset, svelteWithTs.length); j++) {
+                    if (svelteWithTs[j] === '\n') {
+                        lastNewline = j;
+                    }
+                }
+                console.log(`  Calculated lastNewline for offset ${offset}: ${lastNewline}`);
+                console.log(`  Expected column would be: ${offset - (lastNewline + 1)}`);
+            }
+
+            if (svelte2tsxDebug && logOptions.instanceChainingOffsets) console.log(`[S2TSX_INDEX ${filename}] Civet instance block: tsStartInSvelteWithTs=${civetInstanceInfo.tsStartInSvelteWithTs}, originalContentStartLine_Svelte_1based=${civetInstanceInfo.originalContentStartLine}`);
+            if (filename.includes('twoFooUserRequest.svelte')) {
+                 console.log(`[S2TSX_INDEX_DYN_DEBUG_FOO1_BLOCK ${filename}] For Block to be added (twoFooUserRequest instance): tsStartLineInSvelteWithTs=${getLineAndColumnForOffset(svelteWithTs, civetInstanceInfo.tsStartInSvelteWithTs).line}, tsStartColInSvelteWithTs=${getLineAndColumnForOffset(svelteWithTs, civetInstanceInfo.tsStartInSvelteWithTs).column}, originalContentStartLine_Svelte_1based=${civetInstanceInfo.originalContentStartLine}`);
+            }
             const { line: startLine, column: startCol } = getLineAndColumnForOffset(svelteWithTs, civetInstanceInfo.tsStartInSvelteWithTs);
             const { line: endLine } = getLineAndColumnForOffset(svelteWithTs, civetInstanceInfo.tsEndInSvelteWithTs);
             civetBlocksForChaining.push({
@@ -360,14 +387,17 @@ export function svelte2tsx(
         civetBlocksForChaining.sort((a, b) => a.tsStartCharInSvelteWithTs - b.tsStartCharInSvelteWithTs);
         console.log(`[S2TSX_INDEX ${filename}] Civet blocks prepared for chaining (${civetBlocksForChaining.length} blocks):`);
         civetBlocksForChaining.forEach((block, i) => {
+            const isTwoFooFixture = filename.includes('twoFooUserRequest.svelte');
+            if (isTwoFooFixture && block.map.file?.includes('twoFooUserRequest.svelte')) { // Check block.map.file to ensure it's the instance script
+                console.log(`[S2TSX_INDEX_DYN_DEBUG_FOO1_BLOCK ${filename}] For Block ${i} (twoFooUserRequest instance): tsStartLineInSvelteWithTs=${block.tsStartLineInSvelteWithTs}, tsStartColInSvelteWithTs=${block.tsStartColInSvelteWithTs}, originalContentStartLine_Svelte_1based=${block.originalContentStartLine_Svelte_1based}`);
+            }
             console.log(`  [S2TSX_INDEX ${filename}] Block ${i}: tsStartChar=${block.tsStartCharInSvelteWithTs}, tsEndChar=${block.tsEndCharInSvelteWithTs}, tsStartLine=${block.tsStartLineInSvelteWithTs}, mapFile=${block.map.file}, mapSources=${JSON.stringify(block.map.sources)}, mapMappings(first 3 lines): ${block.map.mappings.split(';').slice(0,3).join(';')}`);
         });
 
         // Chain all blocks in one pass
-        let finalMap = baseMap;
-        if (civetBlocksForChaining.length) {
-            console.log(`[S2TSX_INDEX ${filename}] Calling chainMaps with ${civetBlocksForChaining.length} blocks.`);
-            // Pass originalSvelteContent (named `svelte` here) and svelteWithTs (str.original)
+        let finalMap: EncodedSourceMap = baseMap as any as EncodedSourceMap;
+
+        if (civetBlocksForChaining.length > 0) {
             finalMap = chainMaps(baseMap, civetBlocksForChaining, svelte, str.original);
             if (svelte2tsxDebug && logOptions.finalMapMappingsHead) console.log(`[svelte2tsx-index.ts] after chaining all blocks, mappings head: ${finalMap.mappings.split(';').slice(0,3).join(';')}`);
             console.log(`[S2TSX_INDEX ${filename}] Final map after chainMaps (first 3 lines mappings): ${finalMap.mappings.split(';').slice(0,3).join(';')}`);

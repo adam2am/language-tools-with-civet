@@ -152,6 +152,15 @@ export function chainMaps(
         ? origCol0_InSvelteWithTS - block.tsStartColInSvelteWithTs
         : origCol0_InSvelteWithTS;
 
+      const isTwoFooFixture = block.map.file?.includes('twoFooUserRequest.svelte');
+      // DYNAMIC LOG for foo1 target area in twoFooUserRequest
+      // TSX L4C10 should be origLine0_InSvelteWithTS = 1 (for <script> content line 2), origCol0_InSvelteWithTS = 10 (approx, for foo1)
+      // relLine should be 0, relCol should be around 8 for `foo1` in `function foo1()`
+      if (isTwoFooFixture && chainCivetDebug && logOptions.segmentTrace && 
+          currentGeneratedTSXLine_1based === 4 && generatedCol === 10 && blockIndex === 0) { // blockIndex 0 is usually instance script
+          console.log(`[CHAIN_MAPS_DYN_DEBUG_FOO1_TRACE_INPUT ${block.map.file}] TSX L${currentGeneratedTSXLine_1based}C${generatedCol} (Block ${blockIndex}): Tracing with relLineInCompiledTS_0based=${relLine_0based_in_compiled_ts_snippet}, relColInCompiledTS_0based=${relCol_0based_in_compiled_ts_snippet}`);
+      }
+
       if (chainCivetDebug && logOptions.segmentTrace) console.log(`[CHAIN_MAPS] TSX L${currentGeneratedTSXLine_1based}C${generatedCol} (SCRIPT): Tracing Block ${blockIndex}. RelLineInCompiledTS(0): ${relLine_0based_in_compiled_ts_snippet}, RelColInCompiledTS(0): ${Math.max(0, relCol_0based_in_compiled_ts_snippet)}. (origSvelteWithTsL0: ${origLine0_InSvelteWithTS}, origSvelteWithTsC0: ${origCol0_InSvelteWithTS}, blockStartL1: ${block.tsStartLineInSvelteWithTs}, blockStartC0: ${block.tsStartColInSvelteWithTs})`);
 
       let traced: readonly number[] | null = null;
@@ -170,6 +179,10 @@ export function chainMaps(
         // traced is [ genColInCivetTS, srcFileIdxInCivetMap, origLineInSvelte_0based, origColInSvelte_0based, nameIdx? ]
         // We want the final segment to be [ generatedColInTSX, 0 (sourceFileIndex for final map), finalOrigLineInSvelte_0based, finalOrigColInSvelte_0based, nameIndex? ]
         remappedScript.push([generatedCol, 0, traced[2], traced[3], nameIndex]);
+        if (isTwoFooFixture && chainCivetDebug && logOptions.segmentTrace && 
+            currentGeneratedTSXLine_1based === 4 && generatedCol === 10 && blockIndex === 0) {
+            console.log(`[CHAIN_MAPS_DYN_DEBUG_FOO1_TRACE_OUTPUT ${block.map.file}] Traced to Svelte L${traced[2]+1}C${traced[3]}. Final segment for TSX L${currentGeneratedTSXLine_1based}C${generatedCol}: [${generatedCol}, 0, ${traced[2]}, ${traced[3]}]`);
+        }
         if (chainCivetDebug && logOptions.segmentTrace) console.log(`[CHAIN_MAPS]   Traced to Svelte L${traced[2]+1}C${traced[3]}. Final segment: [${generatedCol}, 0, ${traced[2]}, ${traced[3]}${nameIndex !== undefined ? ', '+nameIndex : ''}]`);
       } else {
         // Fallback: map to start of script block in original Svelte
