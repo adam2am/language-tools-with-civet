@@ -67,6 +67,15 @@ The user initiated a session to debug sourcemap issues with Svelte and Civet int
 
 The conversation stopped before re-running the tests with the corrected `tsxExactMatch` for `bar` and the refined `+1` adjustment logic (only for first-line, non-col-0 tokens). The primary goal was to ensure tokens on subsequent lines (like `kekw` and `bar`) were not incorrectly shifted by the `+1` adjustment, while first-line tokens like `foo1` and `foo2` still received the necessary correction.
 
+It seems the combination of correcting relCol_0based_in_compiled_ts_snippet in civetMapChainer.ts and removing the offsetting adjustment in normalizeCivetMap.ts has resolved the issue.
+
+
+
+
+
+
+
+
 FINAL REQUEST:
 
 ## sdev-describe
