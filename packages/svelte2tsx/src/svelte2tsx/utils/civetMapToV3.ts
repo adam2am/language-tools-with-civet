@@ -199,9 +199,27 @@ export function normalizeCivetMap(
         } else {
           // No tokenMatch, typically for whitespace or punctuation segments.
           // Use currentSvelteLineIndent + originalColumn_0based_in_snippet.
-          finalOriginalColumn_0based_in_svelte = currentSvelteLineIndent + originalColumn_0based_in_snippet;
+          const snippetLineForIndentCalc = snippetLines[effectiveLineIndex] || '';
+          const civetLineIndentMatch = snippetLineForIndentCalc.match(/^\s*/);
+          const civetLineInternalIndentLength = civetLineIndentMatch ? civetLineIndentMatch[0].length : 0;
+
+          if (originalColumn_0based_in_snippet >= civetLineInternalIndentLength) {
+            // The character is at or after the Civet line's own internal indent
+            finalOriginalColumn_0based_in_svelte = currentSvelteLineIndent + (originalColumn_0based_in_snippet - civetLineInternalIndentLength);
+          } else {
+            // The character is *within* the Civet line's own internal indent
+            finalOriginalColumn_0based_in_svelte = currentSvelteLineIndent + originalColumn_0based_in_snippet;
+          }
+
           if (svelteFilePath.includes('twoFooUserRequest.svelte') && (name === 'foo1' || name === 'function' || name === 'bar' || name === 'kekw')) {
              console.log(`[MAP_TO_V3_TOKEN_DEBUG_${name ? name.toUpperCase() : 'UNKNOWN_NO_MATCH'} ${svelteFilePath}] No tokenMatch. Fallback to currentIndent + origCivetCol. OrigCivetLine: ${originalLine_0based_in_snippet+1}, OrigCivetColInSnippet: ${originalColumn_0based_in_snippet}. Segment name: ${name}. Calculated Svelte Col: ${finalOriginalColumn_0based_in_svelte}`);
+          }
+          // Debug fallback mapping for hoverInFunction fixture
+          if (svelteFilePath.includes('hoverInFunction.svelte')) {
+            // Ensure snippetLineText used for char logging is the same one used for indent calc
+            const charInSnippet = (snippetLineForIndentCalc[originalColumn_0based_in_snippet] || '');
+            const charInSvelte = (svelteLineText[finalOriginalColumn_0based_in_svelte] || '');
+            console.log(`[MAP_TO_V3_FALLBACK_DEBUG ${svelteFilePath}] GenCol ${generatedColumn_0based}: snippetLine=${originalLine_0based_in_snippet+1}, snippetCol=${originalColumn_0based_in_snippet}, civetLineInternalIndent=${civetLineInternalIndentLength}, currentSvelteLineIndent=${currentSvelteLineIndent}, fallback SvelteCol=${finalOriginalColumn_0based_in_svelte}, snippetChar='${charInSnippet}', svelteLineChar='${charInSvelte}'`);
           }
         }
         
@@ -257,19 +275,32 @@ export function normalizeCivetMap(
         // Fill gaps per character until next segment
         // The `nextGenCol` is based on original civet gCols.
         // The `col` for generated mapping also needs to be adjusted if it's the first line.
+        if (svelteFilePath.includes('hoverInFunction.svelte') && (tokenMatch && (tokenMatch[0] === 'kekw' || tokenMatch[0] === 'abc'))) {
+          console.log(`[MAP_TO_V3_FILL_DEBUG ${svelteFilePath}] Token: '${tokenMatch[0]}', GenLine: ${generatedLine_0based + 1}`);
+          console.log(`  Looping to fill gaps: generatedColumn_0based=${generatedColumn_0based}, nextGenCol=${nextGenCol}`);
+          console.log(`  Initial Svelte pos for fill: L${finalOriginalLine_1based_in_svelte}C${finalOriginalColumn_0based_in_svelte}`);
+        }
+
         for (let col = generatedColumn_0based + 1; col < nextGenCol; col++) {
           let fillMappingGeneratedColumn = col;
           // REMOVING THIS ADJUSTMENT BLOCK AS WELL
           // if (generatedLine_0based === 0 && i > 0 && sortedSegments[0].genCol < col) {
           //   fillMappingGeneratedColumn = col - 1;
           // }
+
+          const fillOriginalColumn = finalOriginalColumn_0based_in_svelte + (col - generatedColumn_0based);
+          if (svelteFilePath.includes('hoverInFunction.svelte') && (tokenMatch && (tokenMatch[0] === 'kekw' || tokenMatch[0] === 'abc'))) {
+            // Ensure snippetLineText here is consistent if used.
+            console.log(`  FILL: GenL ${generatedLine_0based + 1}C${fillMappingGeneratedColumn} (orig TS col ${col}) -> SvelteL ${finalOriginalLine_1based_in_svelte}C${fillOriginalColumn}`);
+          }
+
           addMapping(gen, {
             source: svelteFilePath,
             generated: { line: generatedLine_0based + 1, column: fillMappingGeneratedColumn },
-            original: { line: finalOriginalLine_1based_in_svelte, column: finalOriginalColumn_0based_in_svelte + (col - generatedColumn_0based) }
+            original: { line: finalOriginalLine_1based_in_svelte, column: fillOriginalColumn }
           });
           if (currentSegmentIsFunction) { // Log fill IF the main segment was 'function'
-            console.log(`[MAP_TO_V3_PER_CHAR_FILL_FUNCTION_DETAIL_SEG ${svelteFilePath}] Filled for FUNCTION segment (base GenCol ${mappingGeneratedColumn}): Gen L${generatedLine_0based + 1}C${fillMappingGeneratedColumn} -> Svelte L${finalOriginalLine_1based_in_svelte}C${finalOriginalColumn_0based_in_svelte + (col - currentSegmentGeneratedColumn_forLog)}`);
+            console.log(`[MAP_TO_V3_PER_CHAR_FILL_FUNCTION_DETAIL_SEG ${svelteFilePath}] Filled for FUNCTION segment (base GenCol ${mappingGeneratedColumn}): Gen L${generatedLine_0based + 1}C${fillMappingGeneratedColumn} -> Svelte L${finalOriginalLine_1based_in_svelte}C${fillOriginalColumn}`);
           }
         }
         lastProcessedGeneratedColumn = generatedColumn_0based;
