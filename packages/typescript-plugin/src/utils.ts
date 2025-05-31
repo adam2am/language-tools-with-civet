@@ -7,12 +7,20 @@ export function isSvelteFilePath(filePath: string) {
     return filePath.endsWith('.svelte');
 }
 
+export function isCivetFilePath(filePath: string) {
+    return filePath.endsWith('.civet');
+}
+
 export function isVirtualSvelteFilePath(filePath: string) {
     return filePath.endsWith('.d.svelte.ts');
 }
 
 export function toRealSvelteFilePath(filePath: string) {
     return filePath.slice(0, -11 /* 'd.svelte.ts'.length */) + 'svelte';
+}
+
+export function toRealCivetFilePath(filePath: string) {
+    return filePath.slice(0, -12 /* '.civet.tsx'.length */) + '.civet';
 }
 
 export function toVirtualSvelteFilePath(svelteFilePath: string) {
@@ -23,6 +31,10 @@ export function toVirtualSvelteFilePath(svelteFilePath: string) {
 
 export function ensureRealSvelteFilePath(filePath: string) {
     return isVirtualSvelteFilePath(filePath) ? toRealSvelteFilePath(filePath) : filePath;
+}
+
+export function ensureRealCivetFilePath(filePath: string) {
+    return filePath.endsWith('.civet.tsx') ? toRealCivetFilePath(filePath) : filePath;
 }
 
 export function isNotNullOrUndefined<T>(val: T | undefined | null): val is T {

@@ -9,6 +9,7 @@ import { ProjectSvelteFilesManager } from './project-svelte-files';
 import {
     getProjectDirectory,
     getProjectParsedCommandLine,
+    hasNodeModule,
     importSvelteCompiler,
     isSvelteProject
 } from './utils';
@@ -45,6 +46,18 @@ function init(modules: { typescript: typeof ts }): ts.server.PluginModule {
         } else {
             logger.log('Svelte plugin disabled');
             logger.log(info.config);
+        }
+
+        // Check for Civet dependency
+        const projectDirectory = getProjectDirectory(info.project);
+        if (projectDirectory) {
+            const civetInstalled = hasNodeModule(projectDirectory, '@danielx/civet');
+            configManager.updateEnableCivet(civetInstalled);
+            if (civetInstalled) {
+                logger.log('Civet dependency detected, enabling Civet features.');
+            } else {
+                logger.log('Civet dependency not detected, Civet features will be disabled.');
+            }
         }
 
         const parsedCommandLine = getProjectParsedCommandLine(info.project);
