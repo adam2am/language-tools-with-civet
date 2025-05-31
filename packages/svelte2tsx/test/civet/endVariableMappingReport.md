@@ -1,19 +1,36 @@
  # endVariable.svelte Mapping Report
 
-## User-reported issues
+## User-reported issues - Clarified
 
-- In
-    ```
-    propFunc := (b: number) =>
-        number = number * b;
-    ```
-    hovering on parameter `;` in TSX currently maps to `b` in the original Svelte file (end of previous line).
-- In
-    ```
-	twoPropsFunc := (ab: number, bc: number) =>
-		number = ab * bc
-    ```
-    hovering on `*` parameter in TSX currently maps to `ab` in the original Svelte file (in the script).
+The user is describing the behavior of their IDE's hover/language service, which is influenced by the sourcemaps. The issue isn't necessarily that the sourcemap *literally* maps token X to an unrelated token Y, but rather that hovering a specific character (`*` or `;`) causes the IDE to display hover information for a different, though related, variable definition. This suggests a potential off-by-one or slight misregistration in the sourcemap, leading the IDE to associate the hover target with an adjacent or nearby symbol's definition.
+
+1.  **`propFunc := (b: number) => number = number * b;`** (Original problematic case)
+    *   **Action:** User hovers over the semicolon `;` in the generated TSX (corresponding to the Svelte code `number = number * b;`).
+    *   **Observed IDE Behavior:** The IDE displays hover information for the *parameter* `b: number` (defined on the previous line in Svelte).
+    *   **User Concern:** This is unexpected. Hovering `;` should ideally not bring up information for `b`, or if it does due to proximity, it should be clearly an issue with the single-character variable `b` handling.
+
+2.  **`twoPropsFunc := (ab: number, bc: number) => number = ab * bc`** (Original problematic case, note: no semicolon at the end of the expression line in the original fixture `endVariable.svelte` for this problematic case)
+    *   **Action:** User hovers over the asterisk `*` in the generated TSX (corresponding to `number = ab * bc`).
+    *   **Observed IDE Behavior:** The IDE displays hover information for the *parameter* `ab: number`.
+    *   **User Concern:** This is unexpected. Hovering `*` should not bring up information for `ab`. The user also mentioned difficulty in getting hover information for the text `ab` itself in this scenario.
+
+### Contrasting Good Behavior (from new fixture additions `propFuncAllGood` and `twoPropsFuncAllGood`):
+
+*   **`propFuncAllGood := (bc: number) => number = number * bc;`**
+    *   When the variable is multi-character (e.g., `bc`) and the line ends with a semicolon, hovering the text `bc` correctly shows information for the parameter `bc: number`.
+    *   This suggests that variable length and/or the presence of a semicolon can lead to correct behavior.
+
+*   **`twoPropsFuncAllGood := (ab: number, bc: number) => number = ab * bc;`** (Note: semicolon added)
+    *   The user reports that adding a semicolon at the end of the expression (`number = ab * bc;`) fixes the issues for `twoPropsFunc`. Hovering `ab` presumably now correctly shows `ab: number` info, and `bc` shows `bc: number` info, and `*` no longer shows `ab` info.
+
+### Hypothesized Core Problem:
+
+The issues seem to stem from a slight imprecision in the sourcemaps, particularly affecting:
+*   Single-character variables (like `b` in `propFunc`).
+*   Expressions *not* explicitly terminated by a semicolon (like the original `twoPropsFunc`).
+
+This imprecision might cause the language service, when trying to find the symbol at the hovered character (`*` or `;`), to incorrectly select an adjacent variable's definition due to the mapped region being slightly shifted or too broad.
+The presence of a semicolon appears to provide a clearer boundary, improving mapping accuracy or the IDE's interpretation.
 
 ## Pipeline overview
 

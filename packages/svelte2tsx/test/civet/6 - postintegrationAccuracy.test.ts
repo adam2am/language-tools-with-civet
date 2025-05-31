@@ -14,7 +14,7 @@ const expectedInvokeLine = 6;
 const token = 'funcForTest';
 const observedOffset = 1;
 
-describe('6 - postintegrationAccuracy: Civet mapping offset isolation - IntegrationAccuracy.svelte current', () => {
+describe('6 - postintegrationAccuracy: Civet mapping offset isolation - IntegrationAccuracy.svelte current ', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const input = fs.readFileSync(path.join(fixturesDir, fixture), 'utf-8');
   const { code: tsx, map } = svelte2tsx(input, { filename: fixture });

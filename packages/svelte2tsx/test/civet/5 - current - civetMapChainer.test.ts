@@ -8,7 +8,7 @@ import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
 
 const compileTestDebug = false;
 
-describe('4 - civet: #happy chainSourceMaps on real Civet fixtures (via svelte2tsx)', () => {
+describe('4 - civet: #happy #current chainSourceMaps on real Civet fixtures (via svelte2tsx)', () => {
   const fixturesDir = path.resolve(__dirname, 'fixtures');
   const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svelte'));
   files.forEach((file) => {
