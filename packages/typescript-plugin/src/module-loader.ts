@@ -3,8 +3,7 @@ import { ConfigManager } from './config-manager';
 import { Logger } from './logger';
 import { SvelteSnapshotManager } from './svelte-snapshots';
 import { createSvelteSys } from './svelte-sys';
-import { ensureRealSvelteFilePath, isSvelteFilePath, isVirtualSvelteFilePath, isCivetFilePath, ensureRealCivetFilePath, toRealCivetFilePath } from './utils';
-import { dirname, join } from 'path';
+import { ensureRealSvelteFilePath, isSvelteFilePath, isVirtualSvelteFilePath } from './utils';
 
 /**
  * Caches resolved modules.
@@ -58,7 +57,7 @@ class ModuleResolutionCache {
         return (
             this.projectService.toCanonicalFileName(containingFile) +
             ':::' +
-            this.projectService.toCanonicalFileName(ensureRealSvelteFilePath(ensureRealCivetFilePath(moduleName)))
+            this.projectService.toCanonicalFileName(ensureRealSvelteFilePath(moduleName))
         );
     }
 }
@@ -147,28 +146,16 @@ export function patchModuleLoader(
                 tsResolvedModule?.resolvedFileName.endsWith('.d.ts') ||
                 tsResolvedModule?.resolvedFileName.endsWith('.d.svelte.ts')
             ) {
-                // Svelte files take precedence
-            } else {
-                const result = resolveSvelteModuleNameFromCache(
-                    moduleName,
-                    containingFile,
-                    compilerOptions
-                ).resolvedModule;
-                // .svelte takes precedence over .svelte.ts etc
-                return result ?? tsResolvedModule;
+                return tsResolvedModule;
             }
 
-            // Civet file handling
-            if (configManager.getConfig().civet?.enable && isCivetFilePath(moduleName)) {
-                const { resolvedModule } = resolveCivetModuleNameFromCache(
-                    moduleName,
-                    containingFile,
-                    compilerOptions
-                );
-                return resolvedModule ?? tsResolvedModule;
-            }
-
-            return tsResolvedModule;
+            const result = resolveSvelteModuleNameFromCache(
+                moduleName,
+                containingFile,
+                compilerOptions
+            ).resolvedModule;
+            // .svelte takes precedence over .svelte.ts etc
+            return result ?? tsResolvedModule;
         });
     }
 
@@ -204,53 +191,6 @@ export function patchModuleLoader(
             isExternalLibraryImport: svelteResolvedModule.isExternalLibraryImport
         };
         return resolvedSvelteModule;
-    }
-
-    function resolveCivetModuleName(
-        name: string,
-        containingFile: string,
-        compilerOptions: ts.CompilerOptions
-    ): ts.ResolvedModuleFull | undefined {
-        // Determine the real Civet file path.
-        let realFileName: string;
-        if (name.endsWith('.civet')) {
-            realFileName = name;
-        } else {
-            // Resolve relative to containing file
-            realFileName = join(dirname(containingFile), name);
-        }
-        // Read raw Civet source
-        const civetSource = typescript.sys.readFile(realFileName);
-        if (!civetSource) {
-            logger.log('Could not read Civet file:', realFileName);
-            return undefined;
-        }
-        // Compile Civet to TSX
-        let compileResult: { code: string; sourceMap?: any };
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const civet = require('@danielx/civet');
-            compileResult = civet.compile(civetSource, {
-                sync: true,
-                js: false,
-                ts: true,
-                sourceMap: true
-            });
-        } catch (e) {
-            logger.log('Error compiling Civet file:', realFileName, 'Using fallback.');
-            logger.debug('Civet compile error:', e);
-            compileResult = { code: 'export default {};' };
-        }
-        // Virtual TSX filename
-        const virtualFileName = realFileName + '.tsx';
-        // Register in snapshot manager if supported, else TS will read via sys.readFile override
-        logger.log('Resolved', name, 'to Civet TSX file', virtualFileName);
-        const resolvedCivetModule: ts.ResolvedModuleFull = {
-            extension: typescript.Extension.Tsx,
-            resolvedFileName: virtualFileName,
-            isExternalLibraryImport: false
-        };
-        return resolvedCivetModule;
     }
 
     function resolveModuleNameLiterals(
@@ -295,30 +235,12 @@ export function patchModuleLoader(
                 resolvedModule?.resolvedFileName.endsWith('.d.ts') ||
                 resolvedModule?.resolvedFileName.endsWith('.d.svelte.ts')
             ) {
-                // Svelte files take precedence
-            } else {
-                const result = resolveSvelteModuleNameFromCache(moduleName, containingFile, options);
-                // .svelte takes precedence over .svelte.ts etc
-                return result.resolvedModule ? result : tsResolvedModule;
-            }
-
-            // Civet file handling
-            if (configManager.getConfig().civet?.enable && isCivetFilePath(moduleName)) {
-                const { resolvedModule: civetResolved } = resolveCivetModuleNameFromCache(
-                    moduleName,
-                    containingFile,
-                    options
-                );
-                if (civetResolved) {
-                    return {
-                        resolvedModule: civetResolved,
-                        failedLookupLocations: (tsResolvedModule as any).failedLookupLocations ?? []
-                    } as ts.ResolvedModuleWithFailedLookupLocations;
-                }
                 return tsResolvedModule;
             }
 
-            return tsResolvedModule;
+            const result = resolveSvelteModuleNameFromCache(moduleName, containingFile, options);
+            // .svelte takes precedence over .svelte.ts etc
+            return result.resolvedModule ? result : tsResolvedModule;
         });
     }
 
@@ -335,30 +257,6 @@ export function patchModuleLoader(
         }
 
         const resolvedModule = resolveSvelteModuleName(moduleName, containingFile, options);
-
-        moduleCache.set(moduleName, containingFile, resolvedModule);
-        return {
-            resolvedModule: resolvedModule
-        };
-    }
-
-    function resolveCivetModuleNameFromCache(
-        moduleName: string,
-        containingFile: string,
-        options: ts.CompilerOptions
-    ) {
-        const cachedModule = moduleCache.get(moduleName, containingFile);
-        if (cachedModule) {
-            return {
-                resolvedModule: cachedModule
-            };
-        }
-
-        const resolvedModule = resolveCivetModuleName(
-            moduleName,
-            containingFile,
-            options
-        );
 
         moduleCache.set(moduleName, containingFile, resolvedModule);
         return {

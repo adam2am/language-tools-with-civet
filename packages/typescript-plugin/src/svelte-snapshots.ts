@@ -3,7 +3,7 @@ import type ts from 'typescript/lib/tsserverlibrary';
 import { ConfigManager } from './config-manager';
 import { Logger } from './logger';
 import { SourceMapper } from './source-mapper';
-import { isNoTextSpanInGeneratedCode, isSvelteFilePath, isCivetFilePath, ensureRealCivetFilePath } from './utils';
+import { isNoTextSpanInGeneratedCode, isSvelteFilePath } from './utils';
 
 export class SvelteSnapshot {
     private scriptInfo?: ts.server.ScriptInfo;
@@ -366,24 +366,6 @@ export class SvelteSnapshotManager {
                     ' '.repeat(endIdx - startIdx) +
                     originalText.substring(endIdx);
                 return originalText;
-            } else if (normalizedPath.endsWith('.civet.tsx')) {
-                this.logger.debug('Read Civet virtual file:', path);
-                // Convert to real .civet path
-                const realPath = ensureRealCivetFilePath(path);
-                const civetSource = readFile(realPath, encoding) || '';
-                let code: string;
-                try {
-                    // eslint-disable-next-line @typescript-eslint/no-var-requires
-                    const civet = require('@danielx/civet');
-                    const result = civet.compile(civetSource, { sync: true, js: false, ts: true, sourceMap: false });
-                    code = result.code;
-                    this.logger.log('Successfully compiled Civet file contents of', realPath);
-                } catch (e) {
-                    this.logger.log('Error loading Civet file:', realPath, 'Using fallback.');
-                    this.logger.debug('Error:', e);
-                    code = 'export default {}';
-                }
-                return code;
             } else if (isSvelteFilePath(path)) {
                 this.logger.debug('Read Svelte file:', path);
                 const svelteCode = readFile(path) || '';

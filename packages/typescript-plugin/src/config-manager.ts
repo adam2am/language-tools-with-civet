@@ -1,76 +1,19 @@
 import { EventEmitter } from 'events';
-import type ts from 'typescript/lib/tsserverlibrary';
 
 const configurationEventName = 'configuration-changed';
 
 export interface Configuration {
+    global?: boolean;
     enable: boolean;
+    /** Skip the Svelte detection and assume this is a Svelte project */
     assumeIsSvelteProject: boolean;
-    enableCivet: boolean;
-    diagnostics: {
-        enable: boolean;
-    };
-    userPreferences: ts.UserPreferences;
-    features: {
-        diagnostics: boolean | 'warn' | 'error';
-        hover: boolean;
-        completions: {
-            enable: boolean;
-            emmet: boolean;
-        };
-        definitions: boolean;
-        references: boolean;
-        documentSymbols: boolean;
-        codeActions: {
-            enable: boolean;
-            frameworkAgnostic: boolean;
-        };
-        selectionRange: boolean;
-        signatureHelp: boolean;
-        semanticTokens: boolean;
-    };
-    civet?: {
-        enable: boolean;
-    };
 }
-
-export const defaultConfiguration: Configuration = {
-    enable: true,
-    assumeIsSvelteProject: false,
-    enableCivet: false,
-    diagnostics: {
-        enable: true
-    },
-    userPreferences: {} as ts.UserPreferences,
-    features: {
-        diagnostics: true,
-        hover: true,
-        completions: {
-            enable: true,
-            emmet: true
-        },
-        definitions: true,
-        references: true,
-        documentSymbols: true,
-        codeActions: {
-            enable: true,
-            frameworkAgnostic: true
-        },
-        selectionRange: true,
-        signatureHelp: true,
-        semanticTokens: true
-    },
-    civet: {
-        enable: false // Default to false, will be enabled if Civet detected
-    }
-};
 
 export class ConfigManager {
     private emitter = new EventEmitter();
     private config: Configuration = {
         enable: true,
-        assumeIsSvelteProject: false,
-        enableCivet: false
+        assumeIsSvelteProject: false
     };
 
     onConfigurationChanged(listener: (config: Configuration) => void) {
@@ -83,7 +26,7 @@ export class ConfigManager {
 
     isConfigChanged(config: Configuration) {
         // right now we only care about enable
-        return config.enable !== this.config.enable || config.enableCivet !== this.config.enableCivet;
+        return config.enable !== this.config.enable;
     }
 
     updateConfigFromPluginConfig(config: Configuration) {
@@ -100,12 +43,5 @@ export class ConfigManager {
 
     getConfig() {
         return this.config;
-    }
-
-    updateEnableCivet(enable: boolean) {
-        if (this.config.enableCivet !== enable) {
-            this.config = { ...this.config, enableCivet: enable };
-            this.emitter.emit(configurationEventName, this.config);
-        }
     }
 }
