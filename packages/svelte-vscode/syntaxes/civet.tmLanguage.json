@@ -264,17 +264,6 @@
       ]
     },
     {
-      "begin": "(?x)(?<=[=-]>)[ \\t]*\\r?\\n(\\s+)",
-      "beginCaptures": {
-        "1": { "name": "punctuation.whitespace.indent.civet" }
-      },
-      "end": "^(?!\\1)",
-      "patterns": [
-        { "include": "\\$self" }
-      ],
-      "name": "meta.function.body.civet"
-    },
-    {
       "begin": "(?<=\\s|^)({)(?=[^'\"#]+?}[\\s\\]}]*=)",
       "beginCaptures": {
         "1": {
