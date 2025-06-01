@@ -17,9 +17,14 @@ describe('2 - normalizeCivetMap = converting lines to v3 (dynamic scenarios) #ha
   const scenarios: Scenario[] = [
     {
       name: 'dedented state and propFunc declarations',
-      civetSnippet: 'value := $state(1)\npropFunc := (b: number) =>\n  number .= value * b;\n\npropFunc2 := (b: number) =>\n  number .= value * b\n',
-      svelteContent: `<script lang="civet">\nvalue := $state(1)\npropFunc := (b: number) =>\n  number .= value * b;\n\npropFunc2 := (b: number) =>\n  number .= value * b\n</script>`,
-      tokens: ['value', '$state', 'propFunc', 'number', 'value', 'propFunc2']
+      civetSnippet: 'value .= $state(1)\nprops := (ab: number, b: number) =>\n\tvalue = ab * b\n\npropsProbl := (ab: number, bc: number) =>\n\tvalue = ab * bc\n\nprops2 := (ab: number, bc: number) =>\n\tvalue = ab * bc;',
+      svelteContent: `<script lang="civet">\nvalue .= $state(1)\nprops := (ab: number, b: number) =>\n\tvalue = ab * b\n\npropsProbl := (ab: number, bc: number) =>\n\tvalue = ab * bc\n\nprops2 := (ab: number, bc: number) =>\n\tvalue = ab * bc;\n</script>`,
+      tokens: [
+        'value', '$state',
+        'props', 'ab', 'b', 'value', 'ab', 'b', // for props
+        'propsProbl', 'ab', 'bc', 'value', 'ab', 'bc', // for propsProbl
+        'props2', 'ab', 'bc', 'value', 'ab', 'bc' // for props2
+      ]
     }
   ];
 
