@@ -50,24 +50,35 @@ export function normalizeCivetMap(
   if (civetMap.lines) {
     civetMap.lines.forEach((lineSegments, tsLineIdx) => {
       if (!lineSegments || lineSegments.length === 0) return;
-      // Simple mapping: for each Civet segment, map directly via precomputed offsets
-      let runningGenCol = 0;
+      // currentAbsoluteTSCol tracks the 0-based column in the current generated (TypeScript) line.
+      // Civet's segment[0] is a delta indicating the advance in columns on the generated line
+      // from the start of the previous segment (or from column 0 for the first segment).
+      let currentAbsoluteTSCol = 0;
       for (const seg of lineSegments) {
-        if (!seg || seg.length < 4) continue;
-        runningGenCol += seg[0];
-        const tsCol = runningGenCol;
-        const snippetOrigLine = seg[2];
-        const snippetOrigCol = seg[3];
-        // compute original Svelte position from preprocessor-provided offsets
-        const originalLine1 = originalContentStartLine_1based + snippetOrigLine;
-        const originalCol0  = snippetOrigCol + removedIndentLength;
-        const name = seg.length >= 5 && civetMap.names ? civetMap.names[seg[4]] : undefined;
-        addMapping(gen, {
-          source: svelteFilePath,
-          generated: { line: tsLineIdx + 1, column: tsCol },
-          original: { line: originalLine1, column: originalCol0 },
-          name
-        });
+        if (!seg || seg.length === 0) continue;
+
+        // Always advance the current absolute TS column by the segment's delta.
+        currentAbsoluteTSCol += seg[0];
+
+        // Only add a mapping if the segment includes original file information (length >= 4).
+        // Segments like [genColDelta] (length 1) indicate unmapped generated characters.
+        // gen-mapping handles unmapped characters by default if no mapping is added for them.
+        if (seg.length >= 4) {
+          const tsColForMapping = currentAbsoluteTSCol; // This is the 0-based start column of this mapping in TS
+          const snippetOrigLine = seg[2]; // 0-based line in the Civet snippet
+          const snippetOrigCol = seg[3];  // 0-based column in the Civet snippet
+
+          const originalLine1 = originalContentStartLine_1based + snippetOrigLine; // 1-based Svelte line
+          const originalCol0  = snippetOrigCol + removedIndentLength;           // 0-based Svelte column
+          const name = seg.length >= 5 && civetMap.names ? civetMap.names[seg[4]] : undefined;
+
+          addMapping(gen, {
+            source: svelteFilePath,
+            generated: { line: tsLineIdx + 1, column: tsColForMapping }, // 1-based line, 0-based col for GenMapping
+            original: { line: originalLine1, column: originalCol0 },    // 1-based line, 0-based col
+            name
+          });
+        }
       }
     });
   }
