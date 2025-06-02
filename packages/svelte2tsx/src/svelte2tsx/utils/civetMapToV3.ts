@@ -48,37 +48,87 @@ export function normalizeCivetMap(
   // [generatedColumn_0based, sourceFileIndex_0based, originalLine_0based_in_snippet, originalColumn_0based_in_snippet, optional_nameIndex_0based]
 
   if (civetMap.lines) {
-    civetMap.lines.forEach((lineSegments, tsLineIdx) => {
+    civetMap.lines.forEach((lineSegments, tsLineIdx_0based) => {
       if (!lineSegments || lineSegments.length === 0) return;
-      // currentAbsoluteTSCol tracks the 0-based column in the current generated (TypeScript) line.
-      // Civet's segment[0] is a delta indicating the advance in columns on the generated line
-      // from the start of the previous segment (or from column 0 for the first segment).
-      let currentAbsoluteTSCol = 0;
-      for (const seg of lineSegments) {
-        if (!seg || seg.length === 0) continue;
 
-        // Always advance the current absolute TS column by the segment's delta.
-        currentAbsoluteTSCol += seg[0];
+      let pendingMapping: {
+        generatedLine_1based: number;
+        generatedColumn_0based: number;
+        originalLine_1based: number;
+        originalColumn_0based: number;
+        name?: string;
+      } | null = null;
+      
+      let currentCivetSegmentGeneratedColumnPointer_0based = 0; // Tracks the absolute start column in TS for the current civet segment
 
-        // Only add a mapping if the segment includes original file information (length >= 4).
-        // Segments like [genColDelta] (length 1) indicate unmapped generated characters.
-        // gen-mapping handles unmapped characters by default if no mapping is added for them.
-        if (seg.length >= 4) {
-          const tsColForMapping = currentAbsoluteTSCol; // This is the 0-based start column of this mapping in TS
-          const snippetOrigLine = seg[2]; // 0-based line in the Civet snippet
-          const snippetOrigCol = seg[3];  // 0-based column in the Civet snippet
+      for (const civetSeg of lineSegments) {
+        if (!civetSeg || civetSeg.length === 0) continue;
 
-          const originalLine1 = originalContentStartLine_1based + snippetOrigLine; // 1-based Svelte line
-          const originalCol0  = snippetOrigCol + removedIndentLength;           // 0-based Svelte column
-          const name = seg.length >= 5 && civetMap.names ? civetMap.names[seg[4]] : undefined;
+        const civetGenColDelta = civetSeg[0];
+        // tsColForCurrentCivetSeg_0based is the 0-based starting column in the generated TS
+        // for the potential mapping from *this specific civetSeg*.
+        const tsColForCurrentCivetSeg_0based = currentCivetSegmentGeneratedColumnPointer_0based + civetGenColDelta;
 
+        // If pendingMapping exists AND current civetSeg starts at a *different* TS column
+        // than the one pendingMapping is for, then pendingMapping is complete and should be added.
+        if (pendingMapping && tsColForCurrentCivetSeg_0based !== pendingMapping.generatedColumn_0based) {
           addMapping(gen, {
             source: svelteFilePath,
-            generated: { line: tsLineIdx + 1, column: tsColForMapping }, // 1-based line, 0-based col for GenMapping
-            original: { line: originalLine1, column: originalCol0 },    // 1-based line, 0-based col
-            name
+            generated: { line: pendingMapping.generatedLine_1based, column: pendingMapping.generatedColumn_0based },
+            original: { line: pendingMapping.originalLine_1based, column: pendingMapping.originalColumn_0based },
+            name: pendingMapping.name
           });
+          pendingMapping = null; // Flushed it
         }
+        
+        // Advance the pointer for the next segment's calculation *before* processing this one's original details
+        currentCivetSegmentGeneratedColumnPointer_0based = tsColForCurrentCivetSeg_0based;
+
+        if (civetSeg.length >= 4) { // This Civet segment *has* an original mapping part
+          const snippetOrigLine_0based = civetSeg[2];
+          const snippetOrigCol_0based = civetSeg[3];
+          const currentOriginalLine_1based = originalContentStartLine_1based + snippetOrigLine_0based;
+          const currentOriginalCol_0based = snippetOrigCol_0based + removedIndentLength;
+          const currentName = civetSeg.length >= 5 && civetMap.names ? civetMap.names[civetSeg[4]] : undefined;
+
+          if (!pendingMapping) {
+            // No current pendingMapping for this tsColForCurrentCivetSeg_0based (either first mapping, or previous was flushed)
+            // So, this segment's mapping becomes the new pending one.
+            pendingMapping = {
+              generatedLine_1based: tsLineIdx_0based + 1,
+              generatedColumn_0based: tsColForCurrentCivetSeg_0based,
+              originalLine_1based: currentOriginalLine_1based,
+              originalColumn_0based: currentOriginalCol_0based,
+              name: currentName
+            };
+          } else {
+            // A pendingMapping already exists for this exact tsColForCurrentCivetSeg_0based.
+            // We need to decide if this new civetSeg offers a "better" original mapping.
+            // "Better" means its original column is greater (further into the token).
+            if (currentOriginalCol_0based > pendingMapping.originalColumn_0based) {
+              // This new mapping is preferred. Update the pendingMapping.
+              pendingMapping.originalLine_1based = currentOriginalLine_1based; // original line might change too
+              pendingMapping.originalColumn_0based = currentOriginalCol_0based;
+              pendingMapping.name = currentName; // Update name as well
+            }
+          }
+        }
+        // If civetSeg.length < 4, it's a segment that only advances the generated column pointer
+        // but doesn't provide an original mapping. `currentCivetSegmentGeneratedColumnPointer_0based`
+        // has been updated. If this advancement caused a change in TS column relative to
+        // an existing `pendingMapping`, that `pendingMapping` would have been flushed above.
+        // This non-mapping segment itself doesn't create or modify `pendingMapping`.
+      }
+
+      // After processing all segments for the current TS line,
+      // if there's a pendingMapping left, add it.
+      if (pendingMapping) {
+        addMapping(gen, {
+          source: svelteFilePath,
+          generated: { line: pendingMapping.generatedLine_1based, column: pendingMapping.generatedColumn_0based },
+          original: { line: pendingMapping.originalLine_1based, column: pendingMapping.originalColumn_0based },
+          name: pendingMapping.name
+        });
       }
     });
   }
