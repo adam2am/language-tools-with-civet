@@ -58,6 +58,8 @@ export interface CivetBlockInfo {
     originalCivetLineCount: number;
     /** Line count of the compiled TypeScript code for this block */
     compiledTsLineCount: number;
+    /** Raw mapping lines from the Civet compiler before normalization */
+    rawMapLines?: number[][][];
 }
 
 /**

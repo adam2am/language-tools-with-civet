@@ -148,6 +148,8 @@ ${compiledTsCode}`);
       originalContentStartLine: originalContentStartLine_1based,
       originalCivetLineCount: originalScriptBlockLineCount,
       compiledTsLineCount,
+      /** Include raw mapping lines from the Civet compiler */
+      rawMapLines: rawMap.lines,
       originalCivetSnippetLineOffset_0based,
       removedCivetContentIndentLength: commonIndentLength
     } as CivetBlockInfo;

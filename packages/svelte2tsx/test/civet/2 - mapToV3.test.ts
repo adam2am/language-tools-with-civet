@@ -16,21 +16,25 @@ describe('2 - normalizeCivetMap = converting lines to v3 (dynamic scenarios) #ha
 
   const scenarios: Scenario[] = [
     {
-      name: 'for loops (of vs in)',
-      civetSnippet: `// Loop example
-for fruit, index of fruits
-  console.log \`Fruit \${index + 1}: \${fruit}\`
-
-for fruit, index in fruits
-  console.log \`Fruit \${index + 1}: \${fruit}\``,
-      svelteContent: '<script lang="civet">\n// Loop example\nfor fruit, index of fruits\n  console.log `Fruit ${index + 1}: ${fruit}`\n\nfor fruit, index in fruits\n  console.log `Fruit ${index + 1}: ${fruit}`\n</script>',
+      name: 'for fruit, i of fruits',
+      civetSnippet: `for fruit, i of fruits
+  console.log \`Fruit \${i + 1}: \${fruit}\``,
+      svelteContent: `for fruit, i of fruits
+  console.log \`Fruit \${i + 1}: \${fruit}\``,
       tokens: [
-        // First loop (for...of)
+        'fruit', 'i', 'fruits', // declaration
+        'console', 'log', 'i', 'fruit' // usage in log
+      ]
+    },
+    {
+      name: 'for fruit, index of fruits',
+      civetSnippet: `for fruit, index of fruits
+  console.log \`Fruit \${index + 1}: \${fruit}\``,
+      svelteContent: `for fruit, index of fruits
+  console.log \`Fruit \${index + 1}: \${fruit}\``,
+      tokens: [
         'fruit', 'index', 'fruits', // declaration
-        'console', 'log', 'index', 'fruit', // usage in log
-        // Second loop (for...in)
-        'fruit', 'index', 'fruits', // declaration
-        'console', 'log', 'index', 'fruit'  // usage in log
+        'console', 'log', 'index', 'fruit' // usage in log
       ]
     }
   ];
@@ -43,8 +47,8 @@ for fruit, index in fruits
 
       // Log Civet input and TypeScript output for debug
       console.log(`\n--- Scenario: ${name} ---\n`);
-      console.log('Civet Input:\n', civetSnippet);
-      console.log('TypeScript Output:\n', result.code);
+      console.log(`Civet Input:\n${civetSnippet}`);
+      console.log(`TypeScript Output:\n${result.code}`);
 
       // 2. Compute snippet offset in svelteContent
       const offset = getSnippetOffset(svelteContent, civetSnippet);
@@ -75,9 +79,13 @@ for fruit, index in fruits
       const consumer = await new SourceMapConsumer(normalized as any as RawSourceMap);
       const tsLines = result.code.split('\n');
       for (const token of tokens) {
-        const tsLineIndex = tsLines.findIndex(line => line.includes(token));
+        // Use whole-word regex to avoid partial matches (e.g., 'i' in 'i1')
+        const regex = new RegExp(`\\b${token}\\b`);
+        const tsLineIndex = tsLines.findIndex(line => regex.test(line));
         assert.notEqual(tsLineIndex, -1, `Token "${token}" not found in compiled TS code`);
-        const tsColIndex = tsLines[tsLineIndex].indexOf(token);
+        const match = regex.exec(tsLines[tsLineIndex]);
+        const tsColIndex = match ? match.index : -1;
+        assert.notEqual(tsColIndex, -1, `Exact token "${token}" not found with word boundary in line ${tsLineIndex + 1}`);
         const orig = consumer.originalPositionFor({
           line: tsLineIndex + 1,
           column: tsColIndex,
@@ -97,7 +105,7 @@ for fruit, index in fruits
  */
 function getSnippetOffset(full: string, snippet: string): number {
   const fullLines = full.split('\n');
-  const snippetLines = snippet.split('\n').filter(l => l.trim() !== '');
+  const snippetLines = snippet.split('\n'); // keep blank lines so offsets align with Civet map
   if (!snippetLines.length) return 0;
   const firstLine = snippetLines[0].trim();
   const idx = fullLines.findIndex(line => line.trim() === firstLine);

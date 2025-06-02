@@ -75,23 +75,22 @@ export function normalizePath(filePath: string) {
  * Returns the dedented string and the indent that was removed.
  */
 export function stripCommonIndent(snippet: string): { dedented: string; indent: string } {
+  // Remove only leading blank lines
+  let firstNonBlankLineIndex = 0;
   const lines = snippet.split('\n');
-  let minIndent = Infinity;
-  for (const line of lines) {
-    if (line.trim() === '') continue;
-    const match = line.match(/^(\s*)/);
-    if (match) {
-      minIndent = Math.min(minIndent, match[1].length);
-    }
+  while (firstNonBlankLineIndex < lines.length && lines[firstNonBlankLineIndex].trim() === '') {
+    firstNonBlankLineIndex++;
   }
-  if (!isFinite(minIndent) || minIndent === 0) {
-    return { dedented: snippet, indent: '' };
+
+  if (firstNonBlankLineIndex === lines.length) {
+    // Snippet was all blank lines or empty
+    return { dedented: '', indent: '' };
   }
-  // Determine the indent string (spaces or tabs)
-  const firstNonEmpty = lines.find(line => line.trim() !== '');
-  const indent = firstNonEmpty ? firstNonEmpty.slice(0, minIndent) : '';
-  const dedentedLines = lines.map(line =>
-    line.startsWith(indent) ? line.slice(indent.length) : line
-  );
-  return { dedented: dedentedLines.join('\n'), indent };
+
+  // Join the lines from the first non-blank line onwards
+  const dedented = lines.slice(firstNonBlankLineIndex).join('\n');
+  
+  // Since we are no longer stripping common indent, the indent removed is always empty.
+  // The normalization logic in civetPreprocessor will use this (commonIndentLength = 0).
+  return { dedented, indent: '' };
 } 
