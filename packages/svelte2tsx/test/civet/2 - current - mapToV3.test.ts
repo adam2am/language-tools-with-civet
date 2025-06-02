@@ -16,14 +16,21 @@ describe('2 - normalizeCivetMap = converting lines to v3 (dynamic scenarios) #ha
 
   const scenarios: Scenario[] = [
     {
-      name: 'dedented state and propFunc declarations',
-      civetSnippet: 'value .= $state(1)\nprops := (ab: number, b: number) =>\n\tvalue = ab * b\n\npropsProbl := (ab: number, bc: number) =>\n\tvalue = ab * bc\n\nprops2 := (ab: number, bc: number) =>\n\tvalue = ab * bc;',
-      svelteContent: `<script lang="civet">\nvalue .= $state(1)\nprops := (ab: number, b: number) =>\n\tvalue = ab * b\n\npropsProbl := (ab: number, bc: number) =>\n\tvalue = ab * bc\n\nprops2 := (ab: number, bc: number) =>\n\tvalue = ab * bc;\n</script>`,
+      name: 'for loops (of vs in)',
+      civetSnippet: `// Loop example
+for fruit, index of fruits
+  console.log \`Fruit \${index + 1}: \${fruit}\`
+
+for fruit, index in fruits
+  console.log \`Fruit \${index + 1}: \${fruit}\``,
+      svelteContent: '<script lang="civet">\n// Loop example\nfor fruit, index of fruits\n  console.log `Fruit ${index + 1}: ${fruit}`\n\nfor fruit, index in fruits\n  console.log `Fruit ${index + 1}: ${fruit}`\n</script>',
       tokens: [
-        'value', '$state',
-        'props', 'ab', 'b', 'value', 'ab', 'b', // for props
-        'propsProbl', 'ab', 'bc', 'value', 'ab', 'bc', // for propsProbl
-        'props2', 'ab', 'bc', 'value', 'ab', 'bc' // for props2
+        // First loop (for...of)
+        'fruit', 'index', 'fruits', // declaration
+        'console', 'log', 'index', 'fruit', // usage in log
+        // Second loop (for...in)
+        'fruit', 'index', 'fruits', // declaration
+        'console', 'log', 'index', 'fruit'  // usage in log
       ]
     }
   ];

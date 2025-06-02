@@ -9,30 +9,25 @@ describe('1 - civet: generating source map raw lines #happy #current', () => {
   const filename = 'scenario.civet'; // Match the scenario filename context
 
   it('handles state and propFunc declarations (dedented)', () => {
-    const civetCode = 'value .= $state(1)\nprops := (ab: number, b: number) =>\n\tvalue = ab * b\n\npropsProbl := (ab: number, bc: number) =>\n\tvalue = ab * bc\n\nprops2 := (ab: number, bc: number) =>\n\tvalue = ab * bc;';
+    const civetCode = '// Loop example\nfor fruit, index of fruits\n  console.log `Fruit ${index + 1}: ${fruit}`\n\nfor fruit, index in fruits\n  console.log `Fruit ${index + 1}: ${fruit}`';
     const result = compileCivet(civetCode, filename);
     if (compileTestDebug) {
       console.log('\n--- Civet Code Test (Dedented) ---');
       console.log('Compiled TypeScript:\n', result.code);
-      console.log('Output Map:', JSON.stringify(result.rawMap, null, 2));
+      // Print raw Civet mapping lines per generated TS line
+      if (result.rawMap && 'lines' in result.rawMap) {
+        console.log('Civet raw lines per TS line:');
+        (result.rawMap as any).lines.forEach((lineSegs: number[][], idx: number) => {
+          const segStr = lineSegs.map((seg: number[]) => `[${seg.join(',')}]`).join(' ');
+          console.log(`Line ${idx + 1}: ${segStr}`);
+        });
+      } else {
+        console.log('Output Map:', JSON.stringify(result.rawMap, null, 2));
+      }
     }
-    assert.match(result.code, /let value = \$state\(1\)/);
-    assert.match(result.code, /const props = \(ab: number, b: number\) =>/);
-    assert.match(result.code, /return value = ab \* b/);
-    assert.match(result.code, /const propsProbl = \(ab: number, bc: number\) =>/);
-    assert.match(result.code, /const props2 = \(ab: number, bc: number\) =>/);
-    assert.ok(result.code.includes('value = ab * bc;'), 'Should contain assignment with semicolon for props2');
-    const propsProblBodyMatch = result.code.match(/const propsProbl = \(([^)]*)\) => \{([\s\S]*?)\}/);
-    console.log('[DEBUG] propsProblBodyMatch:', propsProblBodyMatch);
-    assert.ok(propsProblBodyMatch, 'REGEXP_FAILED: propsProblBodyMatch was null. Regex did not match.');
-    assert.ok(propsProblBodyMatch[2], 'CAPTURE_GROUP_2_EMPTY: propsProblBodyMatch[2] (the body) was falsey (empty or undefined). Actual value: ' + propsProblBodyMatch[2]);
-    assert.ok(propsProblBodyMatch[2].includes('return value = ab * bc') && !propsProblBodyMatch[2].includes('return value = ab * bc;'), 'propsProbl assignment should be part of a return, without its own semicolon. Body: ' + (propsProblBodyMatch ? propsProblBodyMatch[2] : 'null'));
-
-    const props2BodyMatch = result.code.match(/const props2 = \(([^)]*)\) => \{([\s\S]*?)\}/);
-    console.log('[DEBUG] props2BodyMatch:', props2BodyMatch);
-    assert.ok(props2BodyMatch, 'REGEXP_FAILED: props2BodyMatch was null. Regex did not match.');
-    assert.ok(props2BodyMatch[2], 'CAPTURE_GROUP_2_EMPTY: props2BodyMatch[2] (the body) was falsey (empty or undefined). Actual value: ' + props2BodyMatch[2]);
-    assert.ok(props2BodyMatch[2].includes('value = ab * bc;') && !props2BodyMatch[2].includes('return value = ab * bc;'), 'props2 should have direct assignment with semicolon. Body: ' + (props2BodyMatch ? props2BodyMatch[2] : 'null'));
+    assert.ok(result.code.includes('let i = 0;for (const fruit of fruits) {const index = i++;'), 'Civet output for "for...of" with index has changed');
+    assert.ok(result.code.includes('for (const fruit in fruits) {const index = fruits[fruit];'), 'Civet output for "for...in" with index has changed');
+    assert.ok(result.code.match(/console\\.log\(`Fruit \$\{index \+ 1\}: \$\{fruit\}`\)/g)?.length === 2, 'Expected two console.log calls with template literals');
 
     const map = result.rawMap as CivetLinesSourceMap | undefined;
     assert.ok(map, 'rawMap should be defined');
