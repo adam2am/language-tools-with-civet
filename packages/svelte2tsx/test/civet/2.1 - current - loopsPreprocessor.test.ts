@@ -16,86 +16,56 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
     description: string;
     tokensToAssert: Record<string, { 
       originalLine: number, 
-      originalColumn: number, 
+      originalColumn: number, // Represents 0-based column for direct comparison with source-map library output
       tsShouldContain?: string, 
       inLoopContext?: boolean,
-      anchorTsString?: string // New: For anchoring search to a specific TS line part
+      anchorTsString?: string 
     }>;
   }
 
   const scenarios: Scenario[] = [
     {
-      fixtureFile: 'lastLoopIssue.svelte',
-      description: 'Mapping for "for fruit, indexdd in fruits" and "for fruit in fruits"',
+      fixtureFile: 'multi-char-var.svelte',
+      description: "Testing sourcemap accuracy for multi-character variables at line-end (no semicolon) vs. single-char variables, based on user report.",
       tokensToAssert: {
-        'fruits_def': { // Svelte: fruits := ... (L2F)
-          originalLine: 2, originalColumn: 1, tsShouldContain: 'fruits'
+        'z_decl': { 
+          originalLine: 2, originalColumn: 1, // Tab, then 'z'
+          tsShouldContain: 'z',
+          anchorTsString: 'z = 4' 
         },
-
-        // "no issue loop"
-        // Svelte L4: for fruit in fruits
-        // TS: for (const fruit in fruits) {
-        'no_issue_loop_fruit_iterator': { // Svelte 'fruit' (L4C5)
-          originalLine: 4, originalColumn: 5, tsShouldContain: 'fruit',
-          anchorTsString: 'for (const fruit in fruits)', 
-          inLoopContext: true
+        'vari_decl': {
+          originalLine: 3, originalColumn: 1, // Tab, then 'v' of 'vari'
+          tsShouldContain: 'vari',
+          anchorTsString: 'vari = 123'
         },
-        'no_issue_loop_fruits_collection': { // Svelte 'fruits' (L4C14)
-          originalLine: 4, originalColumn: 14, tsShouldContain: 'fruits',
-          anchorTsString: 'for (const fruit in fruits)',
-          inLoopContext: true
+        'number1_decl': {
+          originalLine: 4, originalColumn: 1, // Tab, then 'n' of 'number1'
+          tsShouldContain: 'number1',
+          anchorTsString: 'number1 = vari'
         },
-        // Svelte L5: console.log \`Fruit ${fruit}\`
-        // TS: console.log(\`Fruit ${fruit}\`)
-        'no_issue_log_console': { // Svelte 'console' (L5C3)
-          originalLine: 5, originalColumn: 3, tsShouldContain: 'console',
-          // Ensure this anchor is specific to the first console.log call for the "no issue loop"
-          anchorTsString: 'console.log(`Fruit ${fruit}`)' 
+        'vari_in_number1': {
+          originalLine: 4, originalColumn: 12, // 	 L4: number1 .= vari (v is at col 12)
+          tsShouldContain: 'vari',
+          anchorTsString: 'number1 = vari'
         },
-        'no_issue_log_fruit_usage': { // Svelte 'fruit' (L5C23)
-          originalLine: 5, originalColumn: 23, tsShouldContain: 'fruit',
-          // This anchor, combined with top-down search, should target fruit in the first loop's log
-          anchorTsString: 'Fruit ${fruit}`)' 
+        // Inside varIssue := () => number2 .= vari
+        // Original Svelte line 6: 		number2 .= vari
+        'number2_decl_in_varIssue': {
+          originalLine: 6, originalColumn: 2, // 2 Tabs, then 'n' of 'number2' (n is at col 2)
+          tsShouldContain: 'number2',
+          anchorTsString: 'number2 = vari' 
         },
-
-        // "issue loop"
-        // Svelte L8: for fruit, indexdd in fruits
-        // TS: for (const fruit in fruits) {const indexdd = fruits[fruit];
-        'issue_loop_fruit_iterator': { // Svelte 'fruit' (L8C5) -> TS 'fruit' in 'for (const fruit...'
-          originalLine: 8, originalColumn: 5, tsShouldContain: 'fruit',
-          anchorTsString: 'for (const fruit in fruits) {const indexdd = fruits[fruit];',
-          inLoopContext: true
+        'vari_in_varIssue_problematic': { // The reported problematic case: multi-char, EOL
+          originalLine: 6, originalColumn: 13, // 		 L6: number2 .= vari (v is at col 13)
+          tsShouldContain: 'vari',
+          anchorTsString: 'number2 = vari'
         },
-        'issue_loop_indexdd_declaration': { // Svelte 'indexdd' (L8C12) -> TS 'indexdd' in 'const indexdd...'
-          originalLine: 8, originalColumn: 12, tsShouldContain: 'indexdd',
-          anchorTsString: '{const indexdd = fruits[fruit];'
-        },
-        'issue_loop_fruits_collection': { // Svelte 'fruits' (L8C23) -> TS 'fruits' in '...in fruits)'
-          originalLine: 8, originalColumn: 23, tsShouldContain: 'fruits',
-          anchorTsString: 'for (const fruit in fruits) {const indexdd = fruits[fruit];',
-          inLoopContext: true
-        },
-        'issue_loop_fruits_in_assignment': { // Svelte 'fruits' (L8C23) -> TS 'fruits' in 'fruits[fruit]'
-            originalLine: 8, originalColumn: 23, tsShouldContain: 'fruits',
-            anchorTsString: 'indexdd = fruits[fruit];' 
-        },
-        'issue_loop_fruit_key_in_assignment': { // Svelte 'fruit' (L8C5) -> TS 'fruit' in 'fruits[fruit]'
-            originalLine: 8, originalColumn: 5, tsShouldContain: 'fruit',
-            anchorTsString: 'indexdd = fruits[fruit];'
-        },
-        // Svelte L9: console.log \`Fruit ${indexdd + 1}: ${fruit}\`
-        // TS: console.log(\`Fruit ${indexdd + 1}: ${fruit}\`)
-        'issue_log_console': { 
-          originalLine: 9, originalColumn: 3, tsShouldContain: 'console',
-          anchorTsString: 'console.log(`Fruit ${indexdd + 1}: ${fruit}`)'
-        },
-        'issue_log_indexdd_usage': { 
-          originalLine: 9, originalColumn: 21, tsShouldContain: 'indexdd',
-          anchorTsString: 'Fruit ${indexdd + 1}: ${fruit}`)'
-        },
-        'issue_log_fruit_usage': { 
-          originalLine: 9, originalColumn: 36, tsShouldContain: 'fruit',
-          anchorTsString: 'Fruit ${indexdd + 1}: ${fruit}`)'
+        // Inside varGreat := () => number2 .= z
+        // Original Svelte line 8: 		number2 .= z
+        'z_in_varGreat_control': { // Control case: single char, EOL
+          originalLine: 8, originalColumn: 13, // 		 L8: number2 .= z (z is at col 13)
+          tsShouldContain: 'z',
+          anchorTsString: 'number2 = z'
         }
       }
     }

@@ -47,6 +47,9 @@ export function normalizeCivetMap(
   // The `civetMap.lines` array contains segments which are:
   // [generatedColumn_0based, sourceFileIndex_0based, originalLine_0based_in_snippet, originalColumn_0based_in_snippet, optional_nameIndex_0based]
 
+  // LAZER FOCUS DEBUG for 2Parameters.svelte, original line 4 (propsProbl parameters)
+  const isTargetFixtureForBcDebug = svelteFilePath.includes('2Parameters.svelte');
+
   if (civetMap.lines) {
     civetMap.lines.forEach((lineSegments, tsLineIdx_0based) => {
       if (!lineSegments || lineSegments.length === 0) return;
@@ -65,13 +68,18 @@ export function normalizeCivetMap(
         if (!civetSeg || civetSeg.length === 0) continue;
 
         const civetGenColDelta = civetSeg[0];
-        // tsColForCurrentCivetSeg_0based is the 0-based starting column in the generated TS
-        // for the potential mapping from *this specific civetSeg*.
         const tsColForCurrentCivetSeg_0based = currentCivetSegmentGeneratedColumnPointer_0based + civetGenColDelta;
+        const currentSegmentIsActualMapping = civetSeg.length >= 4;
 
         // If pendingMapping exists AND current civetSeg starts at a *different* TS column
-        // than the one pendingMapping is for, then pendingMapping is complete and should be added.
-        if (pendingMapping && tsColForCurrentCivetSeg_0based !== pendingMapping.generatedColumn_0based) {
+        // than the one pendingMapping is for, then pendingMapping might be complete.
+        // MODIFIED (Approach A): Only flush if the current segment (causing the column change) is an actual mapping segment.
+        // If it's a non-mapping segment, let pendingMapping persist; it will be flushed by the next actual mapping or end-of-line.
+        if (pendingMapping && tsColForCurrentCivetSeg_0based !== pendingMapping.generatedColumn_0based && currentSegmentIsActualMapping) {
+          // LAZER FOCUS DEBUG
+          if (isTargetFixtureForBcDebug && pendingMapping.originalLine_1based === 4 && pendingMapping.originalColumn_0based >= 27 && pendingMapping.originalColumn_0based <= 29) {
+             console.log(`[BC_DEBUG ${svelteFilePath}] FLUSHING (due to new TS col BY MAPPING SEG) pendingMapping for '${pendingMapping.name}' from TS ${pendingMapping.generatedLine_1based}:${pendingMapping.generatedColumn_0based} -> Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based}`);
+          }
           addMapping(gen, {
             source: svelteFilePath,
             generated: { line: pendingMapping.generatedLine_1based, column: pendingMapping.generatedColumn_0based },
@@ -81,10 +89,10 @@ export function normalizeCivetMap(
           pendingMapping = null; // Flushed it
         }
         
-        // Advance the pointer for the next segment's calculation *before* processing this one's original details
+        // Advance the pointer for the next segment's calculation *after* potential flush and *before* processing this one's original details
         currentCivetSegmentGeneratedColumnPointer_0based = tsColForCurrentCivetSeg_0based;
 
-        if (civetSeg.length >= 4) { // This Civet segment *has* an original mapping part
+        if (currentSegmentIsActualMapping) { // This Civet segment *has* an original mapping part
           const snippetOrigLine_0based = civetSeg[2];
           const snippetOrigCol_0based = civetSeg[3];
           const currentOriginalLine_1based = originalContentStartLine_1based + snippetOrigLine_0based;
@@ -101,15 +109,28 @@ export function normalizeCivetMap(
               originalColumn_0based: currentOriginalCol_0based,
               name: currentName
             };
+            // LAZER FOCUS DEBUG
+            if (isTargetFixtureForBcDebug && currentOriginalLine_1based === 4 && currentOriginalCol_0based >= 27 && currentOriginalCol_0based <= 29) {
+              console.log(`[BC_DEBUG ${svelteFilePath}] CREATED new pendingMapping for '${currentName}' at TS ${tsLineIdx_0based + 1}:${tsColForCurrentCivetSeg_0based} -> Original Svelte ${currentOriginalLine_1based}:${currentOriginalCol_0based}`);
+            }
           } else {
             // A pendingMapping already exists for this exact tsColForCurrentCivetSeg_0based.
             // We need to decide if this new civetSeg offers a "better" original mapping.
             // "Better" means its original column is greater (further into the token).
             if (currentOriginalCol_0based > pendingMapping.originalColumn_0based) {
               // This new mapping is preferred. Update the pendingMapping.
+              // LAZER FOCUS DEBUG
+              if (isTargetFixtureForBcDebug && currentOriginalLine_1based === 4 && currentOriginalCol_0based >= 27 && currentOriginalCol_0based <= 29) {
+                console.log(`[BC_DEBUG ${svelteFilePath}] UPDATING pendingMapping for TS ${tsLineIdx_0based + 1}:${tsColForCurrentCivetSeg_0based}. Old Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based}. New Original Svelte ${currentOriginalLine_1based}:${currentOriginalCol_0based} ('${currentName}')`);
+              }
               pendingMapping.originalLine_1based = currentOriginalLine_1based; // original line might change too
               pendingMapping.originalColumn_0based = currentOriginalCol_0based;
               pendingMapping.name = currentName; // Update name as well
+            } else {
+              // LAZER FOCUS DEBUG
+              if (isTargetFixtureForBcDebug && currentOriginalLine_1based === 4 && currentOriginalCol_0based >= 27 && currentOriginalCol_0based <= 29) {
+                console.log(`[BC_DEBUG ${svelteFilePath}] Did NOT update pendingMapping for TS ${tsLineIdx_0based + 1}:${tsColForCurrentCivetSeg_0based}. Existing Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based} was preferred over New Original Svelte ${currentOriginalLine_1based}:${currentOriginalCol_0based} ('${currentName}')`);
+              }
             }
           }
         }
@@ -123,12 +144,16 @@ export function normalizeCivetMap(
       // After processing all segments for the current TS line,
       // if there's a pendingMapping left, add it.
       if (pendingMapping) {
+        // LAZER FOCUS DEBUG
+        if (isTargetFixtureForBcDebug && pendingMapping.originalLine_1based === 4 && pendingMapping.originalColumn_0based >= 27 && pendingMapping.originalColumn_0based <= 29) {
+            console.log(`[BC_DEBUG ${svelteFilePath}] FLUSHING (end of line) pendingMapping for '${pendingMapping.name}' from TS ${pendingMapping.generatedLine_1based}:${pendingMapping.generatedColumn_0based} -> Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based}`);
+        }
         addMapping(gen, {
           source: svelteFilePath,
           generated: { line: pendingMapping.generatedLine_1based, column: pendingMapping.generatedColumn_0based },
           original: { line: pendingMapping.originalLine_1based, column: pendingMapping.originalColumn_0based },
           name: pendingMapping.name
-        });
+          });
       }
     });
   }

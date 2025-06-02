@@ -90,6 +90,12 @@ ${compiledTsCode}`);
 
     if (!rawMap || !('lines' in rawMap)) continue;
 
+    // Add a dummy trailing segment to each rawMap line to help IDE reference-boundary detection
+    // This is a pure generated-column delta ([1]) and will not produce its own mapping.
+    (rawMap.lines as number[][][]).forEach(lineSegments => {
+      lineSegments.push([1]);
+    });
+
     // Compute line offset for snippet within the Svelte file dynamically by finding first content line
     const originalContentStartLine_1based = getActualContentStartLine(svelte, start);
     const originalCivetSnippetLineOffset_0based = originalContentStartLine_1based - 1;
