@@ -14,30 +14,89 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
   interface Scenario {
     fixtureFile: string;
     description: string;
-    tokensToAssert: Record<string, { originalLine: number, originalColumn: number, tsShouldContain?: string, inLoopContext?: boolean }>;
+    tokensToAssert: Record<string, { 
+      originalLine: number, 
+      originalColumn: number, 
+      tsShouldContain?: string, 
+      inLoopContext?: boolean,
+      anchorTsString?: string // New: For anchoring search to a specific TS line part
+    }>;
   }
 
   const scenarios: Scenario[] = [
     {
-      fixtureFile: 'loopBadExp.svelte',
-      description: 'Loop without trailing comment',
+      fixtureFile: 'lastLoopIssue.svelte',
+      description: 'Mapping for "for fruit, indexdd in fruits" and "for fruit in fruits"',
       tokensToAssert: {
-        'fruits_def': { originalLine: 2, originalColumn: 1, tsShouldContain: 'fruits' },  // fruits :=
-        'fruits_loop': { originalLine: 3, originalColumn: 21, tsShouldContain: 'fruits', inLoopContext: true }, // of fruits
-        'index_decl': { originalLine: 3, originalColumn: 12, tsShouldContain: 'index' },   // , index
-        'fruit_decl': { originalLine: 3, originalColumn: 5, tsShouldContain: 'fruit' },    // for fruit (after tab)
-        'console': { originalLine: 4, originalColumn: 3 } // console (after tab + 2 spaces)
-      }
-    },
-    {
-      fixtureFile: 'loopGoodExp.svelte',
-      description: 'Loop with trailing comment',
-      tokensToAssert: {
-        'fruits_def': { originalLine: 2, originalColumn: 1, tsShouldContain: 'fruits' },  // fruits :=
-        'fruits_loop': { originalLine: 3, originalColumn: 21, tsShouldContain: 'fruits', inLoopContext: true }, // of fruits
-        'index_decl': { originalLine: 3, originalColumn: 12, tsShouldContain: 'index' },   // , index
-        'fruit_decl': { originalLine: 3, originalColumn: 5, tsShouldContain: 'fruit' },    // for fruit (after tab)
-        'console': { originalLine: 4, originalColumn: 3 } // console (after tab + 2 spaces)
+        'fruits_def': { // Svelte: fruits := ... (L2F)
+          originalLine: 2, originalColumn: 1, tsShouldContain: 'fruits'
+        },
+
+        // "no issue loop"
+        // Svelte L4: for fruit in fruits
+        // TS: for (const fruit in fruits) {
+        'no_issue_loop_fruit_iterator': { // Svelte 'fruit' (L4C5)
+          originalLine: 4, originalColumn: 5, tsShouldContain: 'fruit',
+          anchorTsString: 'for (const fruit in fruits)', 
+          inLoopContext: true
+        },
+        'no_issue_loop_fruits_collection': { // Svelte 'fruits' (L4C14)
+          originalLine: 4, originalColumn: 14, tsShouldContain: 'fruits',
+          anchorTsString: 'for (const fruit in fruits)',
+          inLoopContext: true
+        },
+        // Svelte L5: console.log \`Fruit ${fruit}\`
+        // TS: console.log(\`Fruit ${fruit}\`)
+        'no_issue_log_console': { // Svelte 'console' (L5C3)
+          originalLine: 5, originalColumn: 3, tsShouldContain: 'console',
+          // Ensure this anchor is specific to the first console.log call for the "no issue loop"
+          anchorTsString: 'console.log(`Fruit ${fruit}`)' 
+        },
+        'no_issue_log_fruit_usage': { // Svelte 'fruit' (L5C23)
+          originalLine: 5, originalColumn: 23, tsShouldContain: 'fruit',
+          // This anchor, combined with top-down search, should target fruit in the first loop's log
+          anchorTsString: 'Fruit ${fruit}`)' 
+        },
+
+        // "issue loop"
+        // Svelte L8: for fruit, indexdd in fruits
+        // TS: for (const fruit in fruits) {const indexdd = fruits[fruit];
+        'issue_loop_fruit_iterator': { // Svelte 'fruit' (L8C5) -> TS 'fruit' in 'for (const fruit...'
+          originalLine: 8, originalColumn: 5, tsShouldContain: 'fruit',
+          anchorTsString: 'for (const fruit in fruits) {const indexdd = fruits[fruit];',
+          inLoopContext: true
+        },
+        'issue_loop_indexdd_declaration': { // Svelte 'indexdd' (L8C12) -> TS 'indexdd' in 'const indexdd...'
+          originalLine: 8, originalColumn: 12, tsShouldContain: 'indexdd',
+          anchorTsString: '{const indexdd = fruits[fruit];'
+        },
+        'issue_loop_fruits_collection': { // Svelte 'fruits' (L8C23) -> TS 'fruits' in '...in fruits)'
+          originalLine: 8, originalColumn: 23, tsShouldContain: 'fruits',
+          anchorTsString: 'for (const fruit in fruits) {const indexdd = fruits[fruit];',
+          inLoopContext: true
+        },
+        'issue_loop_fruits_in_assignment': { // Svelte 'fruits' (L8C23) -> TS 'fruits' in 'fruits[fruit]'
+            originalLine: 8, originalColumn: 23, tsShouldContain: 'fruits',
+            anchorTsString: 'indexdd = fruits[fruit];' 
+        },
+        'issue_loop_fruit_key_in_assignment': { // Svelte 'fruit' (L8C5) -> TS 'fruit' in 'fruits[fruit]'
+            originalLine: 8, originalColumn: 5, tsShouldContain: 'fruit',
+            anchorTsString: 'indexdd = fruits[fruit];'
+        },
+        // Svelte L9: console.log \`Fruit ${indexdd + 1}: ${fruit}\`
+        // TS: console.log(\`Fruit ${indexdd + 1}: ${fruit}\`)
+        'issue_log_console': { 
+          originalLine: 9, originalColumn: 3, tsShouldContain: 'console',
+          anchorTsString: 'console.log(`Fruit ${indexdd + 1}: ${fruit}`)'
+        },
+        'issue_log_indexdd_usage': { 
+          originalLine: 9, originalColumn: 21, tsShouldContain: 'indexdd',
+          anchorTsString: 'Fruit ${indexdd + 1}: ${fruit}`)'
+        },
+        'issue_log_fruit_usage': { 
+          originalLine: 9, originalColumn: 36, tsShouldContain: 'fruit',
+          anchorTsString: 'Fruit ${indexdd + 1}: ${fruit}`)'
+        }
       }
     }
   ];
@@ -52,7 +111,7 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
       const preprocessResult = preprocessCivet(svelteContent, filePath);
       assert.ok(preprocessResult.instance, 'Expected instance script info from preprocessCivet');
       const instanceBlock = preprocessResult.instance as CivetBlockInfo;
-      const normalizedMap = instanceBlock.map as unknown as EncodedSourceMap; // Cast for now, as CivetBlockInfo.map is StandardRawSourceMap
+      const normalizedMap = instanceBlock.map as unknown as EncodedSourceMap; 
       
       const compiledTsCode = preprocessResult.code.slice(
         instanceBlock.tsStartInSvelteWithTs,
@@ -67,7 +126,7 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
       console.log('  originalCivetLineCount:', instanceBlock.originalCivetLineCount);
       console.log('  compiledTsLineCount:', instanceBlock.compiledTsLineCount);
       // Log raw Civet-to-TS mapping lines before normalization for debugging
-      console.log('Raw Civet-to-TS map lines (first 3):', (instanceBlock as any).rawMapLines?.slice(0, 3));
+      console.log('Raw Civet-to-TS map lines:', (instanceBlock as any).rawMapLines);
 
       assert.ok(normalizedMap, `Normalized map should exist for ${scenario.fixtureFile}`);
       assert.equal(normalizedMap.version, 3, 'Map version should be 3');
@@ -90,43 +149,53 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
       for (const [tokenKey, expectedMeta] of Object.entries(scenario.tokensToAssert)) {
         let tsLineIndex = -1;
         let tsColIndex = -1;
-        const searchString = expectedMeta.tsShouldContain ?? tokenKey;
+        const searchString = expectedMeta.tsShouldContain ?? tokenKey.split('_')[0]; // Use base name if tsShouldContain not specified
         const regex = new RegExp(`\\b${searchString}\\b`);
 
         if (expectedMeta.inLoopContext) {
-            const loopLineIdx = tsLines.findIndex(line => line.includes('for (const fruit of fruits)'));
-            assert.notEqual(loopLineIdx, -1, `Could not find TS for...of loop line for token '${tokenKey}'`);
-            const loopLine = tsLines[loopLineIdx];
+            let loopLineSearchIdx = -1;
+            for(let i=0; i < tsLines.length; i++) {
+                const line = tsLines[i];
+                // Check for standard loop constructs AND our anchor string
+                if ((line.includes('for (const fruit of fruits)') || line.includes('for (const fruit in fruits)')) && 
+                    (!expectedMeta.anchorTsString || line.includes(expectedMeta.anchorTsString)) ) {
+                    loopLineSearchIdx = i;
+                    break; 
+                }
+            }
+            assert.notEqual(loopLineSearchIdx, -1, `Could not find TS loop line for token '${tokenKey}' with anchor '${expectedMeta.anchorTsString}'`);
+            const loopLine = tsLines[loopLineSearchIdx];
             const match = regex.exec(loopLine);
             if (match) {
-                tsLineIndex = loopLineIdx;
+                tsLineIndex = loopLineSearchIdx;
                 tsColIndex = match.index;
             }
         } else {
             for (let i = 0; i < tsLines.length; i++) {
-                const match = regex.exec(tsLines[i]);
+                const line = tsLines[i];
+                // If anchorTsString is present, current line must contain it
+                if (expectedMeta.anchorTsString && !line.includes(expectedMeta.anchorTsString)) {
+                    continue;
+                }
+                const match = regex.exec(line);
                 if (match) {
-                    // Prioritize finding declarations if applicable (e.g. fruit_decl, index_decl)
-                    // This heuristic assumes declarations appear before usages if same name exists.
-                    // A more robust way would be to analyze TS AST, but this is for test simplicity.
-                    if (tokenKey.endsWith('_decl') && tsLines[i].match(new RegExp(`(const|let|var)\\s+${searchString}`))) {
+                    if (tokenKey.endsWith('_decl') && line.match(new RegExp(`(const|let|var)\\s+${searchString}`))) {
                          tsLineIndex = i;
                          tsColIndex = match.index;
                          break;
                     }
-                    // For fruits_def, ensure it's part of the 'const fruits =' line
-                    if (tokenKey === 'fruits_def' && tsLines[i].startsWith('const fruits = ')) {
+                    if (tokenKey === 'fruits_def' && line.startsWith('const fruits = ')) {
                         tsLineIndex = i;
                         tsColIndex = match.index;
                         break;
                     }
-                    if (tokenKey !== 'fruits_def' && !tokenKey.endsWith('_decl')) { // General case, not a specific declaration
+                    // General case, not a specific declaration, but respects anchor if present
+                    if (tokenKey !== 'fruits_def' && !tokenKey.endsWith('_decl')) { 
                         tsLineIndex = i;
                         tsColIndex = match.index;
                         break;
                     }
-                    // If it's a declaration type but not found yet, and we haven't found a non-decl preferred match, take first overall match
-                    if (tsLineIndex === -1) {
+                    if (tsLineIndex === -1) { // Fallback if specific conditions not met but anchor was (or no anchor)
                         tsLineIndex = i;
                         tsColIndex = match.index;
                     }
@@ -134,7 +203,7 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
             }
         }
         
-        assert.notEqual(tsLineIndex, -1, `Token '${searchString}' (for key '${tokenKey}') not found in compiled TS code: ${compiledTsCode}`);
+        assert.notEqual(tsLineIndex, -1, `Token '${searchString}' (for key '${tokenKey}') not found in compiled TS code with anchor '${expectedMeta.anchorTsString}'. TS Code:\n${compiledTsCode}`);
         assert.notEqual(tsColIndex, -1, `Exact token '${searchString}' (for key '${tokenKey}') not found with word boundary in line ${tsLineIndex + 1}`);
 
         const originalPos = consumer.originalPositionFor({
@@ -144,8 +213,8 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
         });
 
         assert.strictEqual(originalPos.source, filePath, `Source mismatch for token '${tokenKey}'`);
-        assert.strictEqual(originalPos.line, expectedMeta.originalLine, `Original line mismatch for token '${tokenKey}'`);
-        assert.strictEqual(originalPos.column, expectedMeta.originalColumn, `Original column mismatch for token '${tokenKey}'`);
+        assert.strictEqual(originalPos.line, expectedMeta.originalLine, `Original line mismatch for token '${tokenKey}'. Expected ${expectedMeta.originalLine}, got ${originalPos.line}. TS Line: ${tsLineIndex +1}, Col: ${tsColIndex}`);
+        assert.strictEqual(originalPos.column, expectedMeta.originalColumn, `Original column mismatch for token '${tokenKey}'. Expected ${expectedMeta.originalColumn}, got ${originalPos.column}. TS Line: ${tsLineIndex +1}, Col: ${tsColIndex}`);
         console.log(`  Asserted token '${tokenKey}' ('${searchString}'): TS(${tsLineIndex+1}:${tsColIndex}) -> Original(${originalPos.line}:${originalPos.column}) - OK`);
       }
       consumer.destroy();
