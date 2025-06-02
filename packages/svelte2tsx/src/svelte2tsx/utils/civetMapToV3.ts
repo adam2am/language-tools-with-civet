@@ -116,20 +116,21 @@ export function normalizeCivetMap(
           } else {
             // A pendingMapping already exists for this exact tsColForCurrentCivetSeg_0based.
             // We need to decide if this new civetSeg offers a "better" original mapping.
-            // "Better" means its original column is greater (further into the token).
-            if (currentOriginalCol_0based > pendingMapping.originalColumn_0based) {
-              // This new mapping is preferred. Update the pendingMapping.
+            // CHANGED: "Better" now means its original column is SMALLER (start of token).
+            if (currentOriginalCol_0based < pendingMapping.originalColumn_0based) {
+              // This new mapping is preferred (it's closer to token start). Update the pendingMapping.
               // LAZER FOCUS DEBUG
               if (isTargetFixtureForBcDebug && currentOriginalLine_1based === 4 && currentOriginalCol_0based >= 27 && currentOriginalCol_0based <= 29) {
-                console.log(`[BC_DEBUG ${svelteFilePath}] UPDATING pendingMapping for TS ${tsLineIdx_0based + 1}:${tsColForCurrentCivetSeg_0based}. Old Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based}. New Original Svelte ${currentOriginalLine_1based}:${currentOriginalCol_0based} ('${currentName}')`);
+                console.log(`[BC_DEBUG ${svelteFilePath}] UPDATING pendingMapping for TS ${tsLineIdx_0based + 1}:${tsColForCurrentCivetSeg_0based}. Old Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based}. New Original Svelte ${currentOriginalLine_1based}:${currentOriginalCol_0based} ('${currentName}') - PREFERRING TOKEN START`);
               }
               pendingMapping.originalLine_1based = currentOriginalLine_1based; // original line might change too
               pendingMapping.originalColumn_0based = currentOriginalCol_0based;
               pendingMapping.name = currentName; // Update name as well
             } else {
+              // Keep existing mapping (it's already at or closer to token start)
               // LAZER FOCUS DEBUG
               if (isTargetFixtureForBcDebug && currentOriginalLine_1based === 4 && currentOriginalCol_0based >= 27 && currentOriginalCol_0based <= 29) {
-                console.log(`[BC_DEBUG ${svelteFilePath}] Did NOT update pendingMapping for TS ${tsLineIdx_0based + 1}:${tsColForCurrentCivetSeg_0based}. Existing Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based} was preferred over New Original Svelte ${currentOriginalLine_1based}:${currentOriginalCol_0based} ('${currentName}')`);
+                console.log(`[BC_DEBUG ${svelteFilePath}] KEEPING existing pendingMapping for TS ${tsLineIdx_0based + 1}:${tsColForCurrentCivetSeg_0based}. Existing Original Svelte ${pendingMapping.originalLine_1based}:${pendingMapping.originalColumn_0based} was preferred over New Original Svelte ${currentOriginalLine_1based}:${currentOriginalCol_0based} ('${currentName}') - KEEPING TOKEN START`);
               }
             }
           }
