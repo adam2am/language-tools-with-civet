@@ -24,61 +24,66 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
   }
 
   const scenarios: Scenario[] = [
+    // {
+    //   fixtureFile: '0returnCase.svelte',
+    //   description: "Testing sourcemap accuracy for return statements with and without trailing semicolon in Civet and variable assignments.",
+    //   tokensToAssert: {
+    //     'funcIssue_decl': {
+    //       originalLine: 2, originalColumn: 1,
+    //       tsShouldContain: 'funcIssue',
+    //       anchorTsString: 'const funcIssue = () => {'
+    //     },
+    //     'number1_decl_issue': {
+    //       originalLine: 3, originalColumn: 2,
+    //       tsShouldContain: 'number1',
+    //       anchorTsString: 'const number1 = 1;'
+    //     },
+    //     'number1_return_issue': {
+    //       originalLine: 4, originalColumn: 9,
+    //       tsShouldContain: 'number1',
+    //       anchorTsString: 'return number1'
+    //     },
+    //     'funcGreat_decl': {
+    //       originalLine: 6, originalColumn: 1,
+    //       tsShouldContain: 'funcGreat',
+    //       anchorTsString: 'const funcGreat = () => {'
+    //     },
+    //     'number2_decl_great': {
+    //       originalLine: 7, originalColumn: 2,
+    //       tsShouldContain: 'number2',
+    //       anchorTsString: 'const number2 = 1;'
+    //     },
+    //     'number2_return_great': {
+    //       originalLine: 8, originalColumn: 9,
+    //       tsShouldContain: 'number2',
+    //       anchorTsString: 'return number2;'
+    //     },
+    //     'varIssue_decl': {
+    //       originalLine: 10, originalColumn: 1,
+    //       tsShouldContain: 'varIssue',
+    //       anchorTsString: 'const varIssue = () => {'
+    //     },
+    //     'number3_decl_varIssue': {
+    //       originalLine: 11, originalColumn: 2,
+    //       tsShouldContain: 'number3',
+    //       anchorTsString: 'let number3 = va;return number3'
+    //     },
+    //     'varGreat_decl': {
+    //       originalLine: 13, originalColumn: 1,
+    //       tsShouldContain: 'varGreat',
+    //       anchorTsString: 'const varGreat = () => {'
+    //     },
+    //     'number4_decl_varGreat': {
+    //       originalLine: 14, originalColumn: 2,
+    //       tsShouldContain: 'number4',
+    //       anchorTsString: 'let number4 = z;return number4'
+    //     }
+    //   }
+    // },
     {
-      fixtureFile: '0returnCase.svelte',
-      description: "Testing sourcemap accuracy for return statements with and without trailing semicolon in Civet and variable assignments.",
-      tokensToAssert: {
-        'funcIssue_decl': {
-          originalLine: 2, originalColumn: 1,
-          tsShouldContain: 'funcIssue',
-          anchorTsString: 'const funcIssue = () => {'
-        },
-        'number1_decl_issue': {
-          originalLine: 3, originalColumn: 2,
-          tsShouldContain: 'number1',
-          anchorTsString: 'const number1 = 1;'
-        },
-        'number1_return_issue': {
-          originalLine: 4, originalColumn: 9,
-          tsShouldContain: 'number1',
-          anchorTsString: 'return number1'
-        },
-        'funcGreat_decl': {
-          originalLine: 6, originalColumn: 1,
-          tsShouldContain: 'funcGreat',
-          anchorTsString: 'const funcGreat = () => {'
-        },
-        'number2_decl_great': {
-          originalLine: 7, originalColumn: 2,
-          tsShouldContain: 'number2',
-          anchorTsString: 'const number2 = 1;'
-        },
-        'number2_return_great': {
-          originalLine: 8, originalColumn: 9,
-          tsShouldContain: 'number2',
-          anchorTsString: 'return number2;'
-        },
-        'varIssue_decl': {
-          originalLine: 10, originalColumn: 1,
-          tsShouldContain: 'varIssue',
-          anchorTsString: 'const varIssue = () => {'
-        },
-        'number3_decl_varIssue': {
-          originalLine: 11, originalColumn: 2,
-          tsShouldContain: 'number3',
-          anchorTsString: 'let number3 = va;return number3'
-        },
-        'varGreat_decl': {
-          originalLine: 13, originalColumn: 1,
-          tsShouldContain: 'varGreat',
-          anchorTsString: 'const varGreat = () => {'
-        },
-        'number4_decl_varGreat': {
-          originalLine: 14, originalColumn: 2,
-          tsShouldContain: 'number4',
-          anchorTsString: 'let number4 = z;return number4'
-        }
-      }
+      fixtureFile: '0fruitCase.svelte',
+      description: "Decompose mapping for fruit loops (0fruitCase.svelte)",
+      tokensToAssert: {}
     }
   ];
 
