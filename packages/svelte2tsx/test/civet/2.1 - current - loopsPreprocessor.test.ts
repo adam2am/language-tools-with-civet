@@ -25,47 +25,58 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
 
   const scenarios: Scenario[] = [
     {
-      fixtureFile: 'multi-char-var.svelte',
-      description: "Testing sourcemap accuracy for multi-character variables at line-end (no semicolon) vs. single-char variables, based on user report.",
+      fixtureFile: '0returnCase.svelte',
+      description: "Testing sourcemap accuracy for return statements with and without trailing semicolon in Civet and variable assignments.",
       tokensToAssert: {
-        'z_decl': { 
-          originalLine: 2, originalColumn: 1, // Tab, then 'z'
-          tsShouldContain: 'z',
-          anchorTsString: 'z = 4' 
+        'funcIssue_decl': {
+          originalLine: 2, originalColumn: 1,
+          tsShouldContain: 'funcIssue',
+          anchorTsString: 'const funcIssue = () => {'
         },
-        'vari_decl': {
-          originalLine: 3, originalColumn: 1, // Tab, then 'v' of 'vari'
-          tsShouldContain: 'vari',
-          anchorTsString: 'vari = 123'
-        },
-        'number1_decl': {
-          originalLine: 4, originalColumn: 1, // Tab, then 'n' of 'number1'
+        'number1_decl_issue': {
+          originalLine: 3, originalColumn: 2,
           tsShouldContain: 'number1',
-          anchorTsString: 'number1 = vari'
+          anchorTsString: 'const number1 = 1;'
         },
-        'vari_in_number1': {
-          originalLine: 4, originalColumn: 12, // 	 L4: number1 .= vari (v is at col 12)
-          tsShouldContain: 'vari',
-          anchorTsString: 'number1 = vari'
+        'number1_return_issue': {
+          originalLine: 4, originalColumn: 9,
+          tsShouldContain: 'number1',
+          anchorTsString: 'return number1'
         },
-        // Inside varIssue := () => number2 .= vari
-        // Original Svelte line 6: 		number2 .= vari
-        'number2_decl_in_varIssue': {
-          originalLine: 6, originalColumn: 2, // 2 Tabs, then 'n' of 'number2' (n is at col 2)
+        'funcGreat_decl': {
+          originalLine: 6, originalColumn: 1,
+          tsShouldContain: 'funcGreat',
+          anchorTsString: 'const funcGreat = () => {'
+        },
+        'number2_decl_great': {
+          originalLine: 7, originalColumn: 2,
           tsShouldContain: 'number2',
-          anchorTsString: 'number2 = vari' 
+          anchorTsString: 'const number2 = 1;'
         },
-        'vari_in_varIssue_problematic': { // The reported problematic case: multi-char, EOL
-          originalLine: 6, originalColumn: 13, // 		 L6: number2 .= vari (v is at col 13)
-          tsShouldContain: 'vari',
-          anchorTsString: 'number2 = vari'
+        'number2_return_great': {
+          originalLine: 8, originalColumn: 9,
+          tsShouldContain: 'number2',
+          anchorTsString: 'return number2;'
         },
-        // Inside varGreat := () => number2 .= z
-        // Original Svelte line 8: 		number2 .= z
-        'z_in_varGreat_control': { // Control case: single char, EOL
-          originalLine: 8, originalColumn: 13, // 		 L8: number2 .= z (z is at col 13)
-          tsShouldContain: 'z',
-          anchorTsString: 'number2 = z'
+        'varIssue_decl': {
+          originalLine: 10, originalColumn: 1,
+          tsShouldContain: 'varIssue',
+          anchorTsString: 'const varIssue = () => {'
+        },
+        'number3_decl_varIssue': {
+          originalLine: 11, originalColumn: 2,
+          tsShouldContain: 'number3',
+          anchorTsString: 'let number3 = va;return number3'
+        },
+        'varGreat_decl': {
+          originalLine: 13, originalColumn: 1,
+          tsShouldContain: 'varGreat',
+          anchorTsString: 'const varGreat = () => {'
+        },
+        'number4_decl_varGreat': {
+          originalLine: 14, originalColumn: 2,
+          tsShouldContain: 'number4',
+          anchorTsString: 'let number4 = z;return number4'
         }
       }
     }
@@ -79,6 +90,7 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
       console.log(`\n--- Scenario: ${scenario.description} (${scenario.fixtureFile}) ---`);
       
       const preprocessResult = preprocessCivet(svelteContent, filePath);
+      console.log('\n--- Preprocessed TypeScript Code ---\n', preprocessResult.code);
       assert.ok(preprocessResult.instance, 'Expected instance script info from preprocessCivet');
       const instanceBlock = preprocessResult.instance as CivetBlockInfo;
       const normalizedMap = instanceBlock.map as unknown as EncodedSourceMap; 
@@ -155,31 +167,39 @@ describe('2.1 - Preprocessor loop mapping differences #current', () => {
         } else {
             for (let i = 0; i < tsLines.length; i++) {
                 const line = tsLines[i];
-                // If anchorTsString is present, current line must contain it
                 if (expectedMeta.anchorTsString && !line.includes(expectedMeta.anchorTsString)) {
                     continue;
                 }
                 const match = regex.exec(line);
                 if (match) {
+                    const potentialTsLine = i + 1; // 1-based for sourcemap library
+                    const potentialTsCol = match.index; // 0-based for sourcemap library
+
                     if (tokenKey.endsWith('_decl') && line.match(new RegExp(`(const|let|var)\\s+${searchString}`))) {
-                         tsLineIndex = i;
-                         tsColIndex = match.index;
-                         break;
-                    }
-                    if (tokenKey === 'fruits_def' && line.startsWith('const fruits = ')) {
+                        const originalPos = consumer.originalPositionFor({
+                            line: potentialTsLine,
+                            column: potentialTsCol,
+                            bias: SourceMapConsumer.GREATEST_LOWER_BOUND
+                        });
+                        // Verify this is the correct declaration by checking its original mapped position
+                        if (originalPos.source === filePath &&
+                            originalPos.line === expectedMeta.originalLine &&
+                            originalPos.column === expectedMeta.originalColumn) {
+                            tsLineIndex = i; // 0-based for tsLines array
+                            tsColIndex = potentialTsCol;
+                            break; // Found the exact declaration we are looking for
+                        }
+                        // If not the correct one, continue loop to find other potential matches
+                    } else if (tokenKey === 'fruits_def' && line.startsWith('const fruits = ')) {
                         tsLineIndex = i;
-                        tsColIndex = match.index;
+                        tsColIndex = potentialTsCol;
                         break;
-                    }
-                    // General case, not a specific declaration, but respects anchor if present
-                    if (tokenKey !== 'fruits_def' && !tokenKey.endsWith('_decl')) { 
+                    } else if (tokenKey !== 'fruits_def' && !tokenKey.endsWith('_decl')) {
+                        // For other tokens, first match on an anchored line is taken.
+                        // If ambiguity arises here in the future, similar logic to _decl might be needed.
                         tsLineIndex = i;
-                        tsColIndex = match.index;
+                        tsColIndex = potentialTsCol;
                         break;
-                    }
-                    if (tsLineIndex === -1) { // Fallback if specific conditions not met but anchor was (or no anchor)
-                        tsLineIndex = i;
-                        tsColIndex = match.index;
                     }
                 }
             }

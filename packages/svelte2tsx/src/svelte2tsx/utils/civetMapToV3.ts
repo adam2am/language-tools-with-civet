@@ -60,6 +60,7 @@ export function normalizeCivetMap(
         originalLine_1based: number;
         originalColumn_0based: number;
         name?: string;
+        hasFlushedTokenEnd?: boolean;
       } | null = null;
       
       let currentCivetSegmentGeneratedColumnPointer_0based = 0; // Tracks the absolute start column in TS for the current civet segment
@@ -70,6 +71,20 @@ export function normalizeCivetMap(
         const civetGenColDelta = civetSeg[0];
         const tsColForCurrentCivetSeg_0based = currentCivetSegmentGeneratedColumnPointer_0based + civetGenColDelta;
         const currentSegmentIsActualMapping = civetSeg.length >= 4;
+
+        // Duplicate mapping at the end of a skipped token segment, mapping to end-of-token in original
+        if (pendingMapping && civetSeg.length < 4 && !pendingMapping.hasFlushedTokenEnd) {
+          const skipLen = civetGenColDelta;
+          const endGeneratedColumn = tsColForCurrentCivetSeg_0based;
+          const endOriginalColumn = pendingMapping.originalColumn_0based + skipLen;
+          addMapping(gen, {
+            source: svelteFilePath,
+            generated: { line: pendingMapping.generatedLine_1based, column: endGeneratedColumn },
+            original: { line: pendingMapping.originalLine_1based, column: endOriginalColumn },
+            name: pendingMapping.name
+          });
+          pendingMapping.hasFlushedTokenEnd = true;
+        }
 
         // If pendingMapping exists AND current civetSeg starts at a *different* TS column
         // than the one pendingMapping is for, then pendingMapping might be complete.
@@ -107,7 +122,8 @@ export function normalizeCivetMap(
               generatedColumn_0based: tsColForCurrentCivetSeg_0based,
               originalLine_1based: currentOriginalLine_1based,
               originalColumn_0based: currentOriginalCol_0based,
-              name: currentName
+              name: currentName,
+              hasFlushedTokenEnd: false
             };
             // LAZER FOCUS DEBUG
             if (isTargetFixtureForBcDebug && currentOriginalLine_1based === 4 && currentOriginalCol_0based >= 27 && currentOriginalCol_0based <= 29) {
